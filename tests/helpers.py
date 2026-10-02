@@ -24,7 +24,6 @@ def search_body(**extra: Any) -> dict[str, Any]:
                 "brand_new_field": {"x": 1},
             }
         ],
-        "ai_overview": None,
         "related_searches": [{"query": "espresso grinder"}],
         "meta": meta(),
         **extra,

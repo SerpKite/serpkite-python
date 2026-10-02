@@ -7,29 +7,6 @@ from pydantic import AnyUrl, AwareDatetime, BaseModel, ConfigDict, Field, RootMo
 from uuid import UUID
 
 
-class AIModeResponse(BaseModel):
-    model_config = ConfigDict(
-        extra="allow",
-    )
-    request: RequestEcho
-    answer: str
-    markdown: str | None = None
-    results: list[Reference]
-    """
-    Cited sources
-    """
-    meta: Meta
-
-
-class AIOverview(BaseModel):
-    model_config = ConfigDict(
-        extra="allow",
-    )
-    text: str | None = None
-    markdown: str | None = None
-    references: list[Reference] | None = None
-
-
 class Account(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -502,16 +479,6 @@ class RankResponse(BaseModel):
     meta: Meta
 
 
-class Reference(BaseModel):
-    model_config = ConfigDict(
-        extra="allow",
-    )
-    title: str | None = None
-    link: str
-    domain: str | None = None
-    snippet: str | None = None
-
-
 class RelatedSearch(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -527,7 +494,7 @@ class RequestEcho(BaseModel):
     model_config = ConfigDict(
         extra="allow",
     )
-    endpoint: Annotated[str, Field(examples=["search", "news", "ai-mode"])]
+    endpoint: Annotated[str, Field(examples=["search", "news", "lens"])]
     engine: str | list[str]
     """
     The engine policy as asked (google, auto, one provider or a list)
@@ -707,13 +674,12 @@ class SearchRequest(BaseModel):
     format: str | None = "json"
     fields: str | None = None
     """
-    Comma-separated projection, e.g. "results.title,results.link,ai_overview"
+    Comma-separated projection, e.g. "results.title,results.link,knowledge_graph"
     """
     include_content: Annotated[int | None, Field(ge=0, le=5)] = 0
     """
     Also fetch the top N organic pages as Markdown (+1 credit each fetched page)
     """
-    ai_overview: bool | None = True
     ads: bool | None = False
     """
     Include sponsored results
@@ -734,7 +700,6 @@ class SearchResponse(BaseModel):
     )
     request: RequestEcho
     results: list[OrganicResult]
-    ai_overview: AIOverview | None
     answer_box: AnswerBox | None = None
     knowledge_graph: KnowledgeGraph | None = None
     ads: list[OrganicResult] | None = None

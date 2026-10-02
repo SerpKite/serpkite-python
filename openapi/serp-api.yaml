@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SerpKite SERP API
-  version: 1.0.1
+  version: 1.0.2
   description: |
     Public search API (api.serpkite.com). Google results as clean JSON or Markdown
     for AI agents, plus a Google Custom Search–compatible endpoint. Official SDKs:
@@ -42,7 +42,7 @@ info:
 
     Credit table: search/news/images/videos/maps/places/shopping/scholar/patents/
     webpage/customsearch = 1 per page; `num=100` depth bundle = 7; reviews = 1 per 10;
-    autocomplete = 0.5; lens = 2; ai-mode = 3; `include_content` = +1 per fetched page;
+    autocomplete = 0.5; lens = 2; `include_content` = +1 per fetched page;
     batches ×0.5; cache hit via `max_age` ×0.5. `engine=consensus` (search only) =
     the sum of one page per provider that returned results.
 servers:
@@ -67,7 +67,7 @@ paths:
 
   /v1/search:
     post:
-      summary: Google web search (organic results, AI Overview, knowledge graph, answer box, people also ask, top stories, local pack…)
+      summary: Google web search (organic results, knowledge graph, answer box, people also ask, top stories, local pack…)
       operationId: search
       requestBody: { $ref: "#/components/requestBodies/Search" }
       responses:
@@ -98,7 +98,6 @@ paths:
         - { name: format, in: query, schema: { type: string } }
         - { name: fields, in: query, schema: { type: string } }
         - { name: include_content, in: query, schema: { type: integer } }
-        - { name: ai_overview, in: query, schema: { type: boolean } }
         - { name: ads, in: query, schema: { type: boolean } }
         - { name: max_age, in: query, schema: { type: integer } }
         - { name: engine, in: query, schema: { type: string }, description: "google (default), auto, consensus, one provider, or a comma-separated list (e.g. google,brave)" }
@@ -256,19 +255,6 @@ paths:
             schema: { $ref: "#/components/schemas/LensRequest" }
       responses:
         "200": { $ref: "#/components/responses/LensOK" }
-        "400": { $ref: "#/components/responses/Error" }
-        "401": { $ref: "#/components/responses/Error" }
-        "402": { $ref: "#/components/responses/Error" }
-        "403": { $ref: "#/components/responses/Error" }
-        "429": { $ref: "#/components/responses/Error" }
-        "503": { $ref: "#/components/responses/Unavailable" }
-  /v1/ai-mode:
-    post:
-      summary: Google AI Mode answer with citations (3 credits)
-      operationId: aiMode
-      requestBody: { $ref: "#/components/requestBodies/Search" }
-      responses:
-        "200": { $ref: "#/components/responses/AIModeOK" }
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Error" }
         "402": { $ref: "#/components/responses/Error" }
@@ -469,7 +455,7 @@ paths:
 
   /v1/mcp:
     post:
-      summary: Remote MCP server (streamable HTTP, JSON-RPC 2.0). Tools search, news, maps, scholar, webpage, ai_overview
+      summary: Remote MCP server (streamable HTTP, JSON-RPC 2.0). Tools search, news, maps, scholar, webpage
       operationId: mcp
       requestBody:
         required: true
@@ -619,14 +605,6 @@ components:
           schema: { $ref: "#/components/schemas/LensResponse" }
         text/markdown:
           schema: { type: string }
-    AIModeOK:
-      description: OK (text/markdown when format=markdown)
-      headers: *billingHeaders
-      content:
-        application/json:
-          schema: { $ref: "#/components/schemas/AIModeResponse" }
-        text/markdown:
-          schema: { type: string }
     WebpageOK:
       description: OK (text/markdown when format=markdown)
       headers: *billingHeaders
@@ -670,9 +648,8 @@ components:
         safe: { type: string, enum: [active, off], default: off }
         autocorrect: { type: boolean, default: true }
         format: { type: string, enum: [json, markdown, compact], default: json }
-        fields: { type: string, description: 'Comma-separated projection, e.g. "results.title,results.link,ai_overview"' }
+        fields: { type: string, description: 'Comma-separated projection, e.g. "results.title,results.link,knowledge_graph"' }
         include_content: { type: integer, minimum: 0, maximum: 5, default: 0, description: Also fetch the top N organic pages as Markdown (+1 credit each fetched page) }
-        ai_overview: { type: boolean, default: true }
         ads: { type: boolean, default: false, description: Include sponsored results }
         max_age: { type: integer, minimum: 0, description: Accept a cached result up to this many seconds old (50% of credits on a hit) }
         engine: { $ref: "#/components/schemas/EngineParam" }
@@ -779,7 +756,7 @@ components:
       required: [endpoint, engine]
       additionalProperties: true
       properties:
-        endpoint: { type: string, examples: [search, news, ai-mode] }
+        endpoint: { type: string, examples: [search, news, lens] }
         engine:
           description: The engine policy as asked (google, auto, one provider or a list)
           oneOf:
@@ -833,22 +810,6 @@ components:
           items: { $ref: "#/components/schemas/Provider" }
           examples: [[google, brave, bing]]
 
-    Reference:
-      type: object
-      required: [link]
-      properties:
-        title: { type: string }
-        link: { type: string }
-        domain: { type: string }
-        snippet: { type: string }
-
-    AIOverview:
-      type: object
-      properties:
-        text: { type: string }
-        markdown: { type: string }
-        references: { type: array, items: { $ref: "#/components/schemas/Reference" } }
-
     AnswerBox:
       type: object
       properties:
@@ -887,11 +848,10 @@ components:
 
     SearchResponse:
       type: object
-      required: [request, results, ai_overview, related_searches, meta]
+      required: [request, results, related_searches, meta]
       properties:
         request: { $ref: "#/components/schemas/RequestEcho" }
         results: { type: array, items: { $ref: "#/components/schemas/OrganicResult" } }
-        ai_overview: { oneOf: [{ $ref: "#/components/schemas/AIOverview" }, { type: "null" }] }
         answer_box: { $ref: "#/components/schemas/AnswerBox" }
         knowledge_graph: { $ref: "#/components/schemas/KnowledgeGraph" }
         ads: { type: array, items: { $ref: "#/components/schemas/OrganicResult" } }
@@ -1122,16 +1082,6 @@ components:
         results: { type: array, items: { $ref: "#/components/schemas/LensResult" } }
         meta: { $ref: "#/components/schemas/Meta" }
 
-    AIModeResponse:
-      type: object
-      required: [request, answer, results, meta]
-      properties:
-        request: { $ref: "#/components/schemas/RequestEcho" }
-        answer: { type: string }
-        markdown: { type: string }
-        results: { type: array, description: Cited sources, items: { $ref: "#/components/schemas/Reference" } }
-        meta: { $ref: "#/components/schemas/Meta" }
-
     PageMetadata:
       type: object
       properties:
@@ -1244,7 +1194,7 @@ components:
       properties:
         endpoint:
           type: string
-          enum: [search, images, videos, news, maps, places, reviews, shopping, scholar, patents, autocomplete, lens, ai-mode, webpage]
+          enum: [search, images, videos, news, maps, places, reviews, shopping, scholar, patents, autocomplete, lens, webpage]
         requests:
           type: array
           minItems: 1

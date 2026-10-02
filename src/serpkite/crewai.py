@@ -35,11 +35,10 @@ ToolEndpoint = Literal[
     "scholar",
     "patents",
     "autocomplete",
-    "ai-mode",
 ]
 
 _DESCRIPTIONS: dict[str, str] = {
-    "search": "Search Google and get the top results (titles, links, snippets, AI Overview) as Markdown. "
+    "search": "Search Google and get the top results (titles, links, snippets, answer box) as Markdown. "
     "Use it for current facts, recent events and finding sources.",
     "news": "Search Google News for recent articles (title, source, date, link) as Markdown.",
     "images": "Search Google Images and get image results with links as Markdown.",
@@ -50,7 +49,6 @@ _DESCRIPTIONS: dict[str, str] = {
     "scholar": "Search Google Scholar for academic papers (title, authors, citations, PDF) as Markdown.",
     "patents": "Search Google Patents for patents (number, assignee, dates) as Markdown.",
     "autocomplete": "Get Google autocomplete suggestions for a partial query.",
-    "ai-mode": "Ask Google AI Mode a question and get a synthesized answer with cited sources as Markdown.",
 }
 
 
@@ -96,12 +94,11 @@ class SerpKiteSearchTool(BaseTool):  # type: ignore[misc]
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def __init__(self, **data: Any) -> None:
-        endpoint = str(data.get("endpoint", "search")).replace("_", "-")
-        data["endpoint"] = endpoint
+        endpoint = str(data.get("endpoint", "search"))
         if "description" not in data and endpoint in _DESCRIPTIONS:
             data["description"] = _DESCRIPTIONS[endpoint]
         if "name" not in data and endpoint != "search":
-            data["name"] = f"SerpKite Google {endpoint.replace('-', ' ')}"
+            data["name"] = f"SerpKite Google {endpoint}"
         super().__init__(**data)
 
     def _get_client(self) -> SerpKite:

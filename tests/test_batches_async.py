@@ -56,10 +56,10 @@ def test_batches_create_get_wait(sleeps: list[float]) -> None:
     )
     sk = SerpKite()
     job = sk.batches.create(
-        endpoint="ai_mode", requests=[{"q": "a"}, {}], webhook_url="https://hooks.example/sk"
+        endpoint="news", requests=[{"q": "a"}, {}], webhook_url="https://hooks.example/sk"
     )
     assert json.loads(create.calls.last.request.content) == {
-        "endpoint": "ai-mode",
+        "endpoint": "news",
         "requests": [{"q": "a"}, {}],
         "webhook_url": "https://hooks.example/sk",
     }

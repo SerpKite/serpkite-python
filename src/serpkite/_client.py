@@ -27,7 +27,6 @@ from ._base import (
 from ._exceptions import APIConnectionError, APITimeoutError, BatchTimeoutError
 from .types import (
     Account,
-    AIModeResponse,
     AutocompleteResponse,
     Batch,
     BatchCreateResponse,
@@ -70,7 +69,7 @@ def _batch_body(
         raise ValueError("a batch takes at most 100 requests; split it into several create() calls")
     return clean(
         {
-            "endpoint": endpoint.replace("_", "-"),
+            "endpoint": endpoint,
             "requests": [dict(r) for r in requests],
             "webhook_url": webhook_url,
         }
@@ -282,12 +281,12 @@ class SerpKite:
         return parse_body(response, model, fmt, fields)
 
     def request(self, endpoint: str, params: Mapping[str, Any]) -> Any:
-        """Low-level call: POST ``params`` to ``/v1/<endpoint>`` (e.g. ``"search"``, ``"ai-mode"``).
+        """Low-level call: POST ``params`` to ``/v1/<endpoint>`` (e.g. ``"search"``, ``"news"``).
 
         Returns a ``str`` when ``params["format"] == "markdown"``, otherwise the JSON body as a
         ``dict``. Errors and retries behave like the typed methods.
         """
-        path = "/v1/" + endpoint.strip("/").replace("_", "-")
+        path = "/v1/" + endpoint.strip("/")
         fmt = params.get("format")
         response = self._send("POST", path, clean(params))
         return parse_body(response, None, fmt, None)
@@ -331,8 +330,8 @@ class SerpKite:
         fields: Optional[str] = None,
         **params: Unpack[SearchParams],
     ) -> Union[SearchResponse, str, dict[str, Any]]:
-        """Google web search: organic results, AI Overview, answer box, knowledge graph, people
-        also ask, top stories and the local pack.
+        """Google web search: organic results, answer box, knowledge graph, people also ask,
+        top stories and the local pack.
 
         ``format="markdown"`` returns a Markdown ``str``; ``format="compact"`` or ``fields=...``
         return a plain ``dict``; otherwise a typed model.
@@ -792,52 +791,6 @@ class SerpKite:
         return self._vertical("/v1/autocomplete", AutocompleteResponse, {"q": q, **params}, format, fields)
 
     @overload
-    def ai_mode(
-        self,
-        q: str,
-        *,
-        format: Literal["markdown"],
-        fields: Optional[str] = None,
-        **params: Unpack[SearchParams],
-    ) -> str: ...
-    @overload
-    def ai_mode(
-        self,
-        q: str,
-        *,
-        format: Literal["compact"],
-        fields: Optional[str] = None,
-        **params: Unpack[SearchParams],
-    ) -> dict[str, Any]: ...
-    @overload
-    def ai_mode(
-        self, q: str, *, format: Optional[Literal["json"]] = None, fields: str, **params: Unpack[SearchParams]
-    ) -> dict[str, Any]: ...
-    @overload
-    def ai_mode(
-        self,
-        q: str,
-        *,
-        format: Optional[Literal["json"]] = None,
-        fields: None = None,
-        **params: Unpack[SearchParams],
-    ) -> AIModeResponse: ...
-    def ai_mode(
-        self,
-        q: str,
-        *,
-        format: Optional[Format] = None,
-        fields: Optional[str] = None,
-        **params: Unpack[SearchParams],
-    ) -> Union[AIModeResponse, str, dict[str, Any]]:
-        """Google AI Mode answer with cited sources (3 credits).
-
-        ``format="markdown"`` returns a Markdown ``str``; ``format="compact"`` or ``fields=...``
-        return a plain ``dict``; otherwise a typed model.
-        """
-        return self._vertical("/v1/ai-mode", AIModeResponse, {"q": q, **params}, format, fields)
-
-    @overload
     def lens(self, url: str, *, fields: str, **params: Unpack[LensParams]) -> dict[str, Any]: ...
     @overload
     def lens(self, url: str, *, fields: None = None, **params: Unpack[LensParams]) -> LensResponse: ...
@@ -995,12 +948,12 @@ class AsyncSerpKite:
         return parse_body(response, model, fmt, fields)
 
     async def request(self, endpoint: str, params: Mapping[str, Any]) -> Any:
-        """Low-level call: POST ``params`` to ``/v1/<endpoint>`` (e.g. ``"search"``, ``"ai-mode"``).
+        """Low-level call: POST ``params`` to ``/v1/<endpoint>`` (e.g. ``"search"``, ``"news"``).
 
         Returns a ``str`` when ``params["format"] == "markdown"``, otherwise the JSON body as a
         ``dict``. Errors and retries behave like the typed methods.
         """
-        path = "/v1/" + endpoint.strip("/").replace("_", "-")
+        path = "/v1/" + endpoint.strip("/")
         fmt = params.get("format")
         response = await self._send("POST", path, clean(params))
         return parse_body(response, None, fmt, None)
@@ -1044,8 +997,8 @@ class AsyncSerpKite:
         fields: Optional[str] = None,
         **params: Unpack[SearchParams],
     ) -> Union[SearchResponse, str, dict[str, Any]]:
-        """Google web search: organic results, AI Overview, answer box, knowledge graph, people
-        also ask, top stories and the local pack.
+        """Google web search: organic results, answer box, knowledge graph, people also ask,
+        top stories and the local pack.
 
         ``format="markdown"`` returns a Markdown ``str``; ``format="compact"`` or ``fields=...``
         return a plain ``dict``; otherwise a typed model.
@@ -1505,52 +1458,6 @@ class AsyncSerpKite:
         return await self._vertical(
             "/v1/autocomplete", AutocompleteResponse, {"q": q, **params}, format, fields
         )
-
-    @overload
-    async def ai_mode(
-        self,
-        q: str,
-        *,
-        format: Literal["markdown"],
-        fields: Optional[str] = None,
-        **params: Unpack[SearchParams],
-    ) -> str: ...
-    @overload
-    async def ai_mode(
-        self,
-        q: str,
-        *,
-        format: Literal["compact"],
-        fields: Optional[str] = None,
-        **params: Unpack[SearchParams],
-    ) -> dict[str, Any]: ...
-    @overload
-    async def ai_mode(
-        self, q: str, *, format: Optional[Literal["json"]] = None, fields: str, **params: Unpack[SearchParams]
-    ) -> dict[str, Any]: ...
-    @overload
-    async def ai_mode(
-        self,
-        q: str,
-        *,
-        format: Optional[Literal["json"]] = None,
-        fields: None = None,
-        **params: Unpack[SearchParams],
-    ) -> AIModeResponse: ...
-    async def ai_mode(
-        self,
-        q: str,
-        *,
-        format: Optional[Format] = None,
-        fields: Optional[str] = None,
-        **params: Unpack[SearchParams],
-    ) -> Union[AIModeResponse, str, dict[str, Any]]:
-        """Google AI Mode answer with cited sources (3 credits).
-
-        ``format="markdown"`` returns a Markdown ``str``; ``format="compact"`` or ``fields=...``
-        return a plain ``dict``; otherwise a typed model.
-        """
-        return await self._vertical("/v1/ai-mode", AIModeResponse, {"q": q, **params}, format, fields)
 
     @overload
     async def lens(self, url: str, *, fields: str, **params: Unpack[LensParams]) -> dict[str, Any]: ...

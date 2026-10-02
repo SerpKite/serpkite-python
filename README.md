@@ -29,7 +29,7 @@ md = sk.search("best espresso machine", format="markdown")  # str, token-lean fo
 ```
 
 Every response shares one envelope: `request` (the normalised request), `results` (the vertical's
-primary list), vertical-specific extras (`ai_overview`, `answer_box`, `knowledge_graph`,
+primary list), vertical-specific extras (`answer_box`, `knowledge_graph`,
 `people_also_ask`, `related_searches`, `top_stories`, `places`, `ads` on search) and `meta`
 (`request_id`, `credits_used`, `cached`, `latency_ms`, …). All keys are snake_case.
 
@@ -56,7 +56,7 @@ with SerpKite() as sk:  # closes the HTTP client on exit
 
 Every query vertical takes `q` plus optional keyword parameters: `country`, `language`,
 `location`, `uule`, `num`, `page`, `time` (`hour|day|week|month|year`), `tbs`, `device`, `safe`,
-`autocorrect`, `ai_overview`, `ads`, `max_age`, `engine` (see
+`autocorrect`, `ads`, `max_age`, `engine` (see
 [Search engines & fallback](#search-engines--fallback)) and `include_content` (search only).
 
 | Method | Endpoint | Returns |
@@ -73,7 +73,6 @@ Every query vertical takes `q` plus optional keyword parameters: `country`, `lan
 | `sk.patents(q, **params)` | `/v1/patents` | `PatentsResponse` |
 | `sk.autocomplete(q, **params)` | `/v1/autocomplete` | `AutocompleteResponse` |
 | `sk.lens(url)` | `/v1/lens` | `LensResponse` |
-| `sk.ai_mode(q, **params)` | `/v1/ai-mode` | `AIModeResponse` (`answer`, `markdown`, `results`) |
 | `sk.webpage(url, include_html=False)` | `/v1/webpage` | `WebpageResponse` (`markdown`, `text`, `metadata`) |
 | `sk.rank(q, domain, num=100)` | `/v1/rank` | `RankResponse` (`position` or `None`, `matches`) |
 | `sk.account()` | `/v1/account` | `Account` (balance, limits, month usage) |
@@ -86,7 +85,7 @@ The output format changes the return type, and the overloads make type checkers 
 sk.search("q")                          # SearchResponse
 sk.search("q", format="markdown")       # str
 sk.search("q", format="compact")        # dict: lean results + meta
-sk.search("q", fields="results.title,results.link,ai_overview")  # dict: projected
+sk.search("q", fields="results.title,results.link,answer_box")   # dict: projected
 sk.webpage("https://example.com", format="markdown")             # str
 ```
 
@@ -239,7 +238,7 @@ agent = Agent(role="Researcher", goal="Find current facts", backstory="...", too
 
 The tool returns Markdown, which uses far fewer tokens than JSON. The agent can set `query`,
 `num`, `country`, `language` and `time`. `endpoint` can be `search`, `news`, `images`, `videos`,
-`maps`, `places`, `shopping`, `scholar`, `patents`, `autocomplete` or `ai-mode`. `engine` (you set
+`maps`, `places`, `shopping`, `scholar`, `patents` or `autocomplete`. `engine` (you set
 it, not the agent) opts in to [fallback providers](#search-engines--fallback).
 
 ## LangChain

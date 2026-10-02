@@ -23,7 +23,6 @@ from serpkite import (
 from serpkite.types import (
     Account,
     AccountKey,
-    AIModeResponse,
     NewsResponse,
     OrganicResult,
     RankResponse,
@@ -51,7 +50,6 @@ def test_search_sends_bearer_and_parses_model() -> None:
     assert res.results[0].title == "Best espresso machines"
     assert res.results[0].displayed_link == "example.com > espresso"
     assert res.meta.credits_used == 1
-    assert res.ai_overview is None
     # Unknown fields are kept, not rejected.
     assert res.results[0].model_extra == {"brand_new_field": {"x": 1}}
 
@@ -181,17 +179,6 @@ def test_route_absent_on_cache_hit() -> None:
         return_value=httpx.Response(200, json=search_body(meta=meta(cached=True)))
     )
     assert SerpKite().search("espresso", max_age=3600).meta.route is None
-
-
-@respx.mock
-def test_ai_mode() -> None:
-    body = list_body("ai-mode", [{"title": "Src", "link": "https://a.example"}], answer="Yes.")
-    route = respx.post(f"{BASE}/v1/ai-mode").mock(return_value=httpx.Response(200, json=body))
-    res = SerpKite().ai_mode("is espresso strong?")
-    assert isinstance(res, AIModeResponse)
-    assert res.answer == "Yes."
-    assert res.results[0].link == "https://a.example"
-    assert route.called
 
 
 @respx.mock
@@ -409,18 +396,18 @@ def test_env_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_version() -> None:
-    assert serpkite.__version__ == "0.1.0"
+    assert serpkite.__version__ == "0.2.0"
 
 
 @respx.mock
 def test_low_level_request() -> None:
-    route = respx.post(f"{BASE}/v1/ai-mode").mock(
+    route = respx.post(f"{BASE}/v1/news").mock(
         side_effect=[
-            httpx.Response(200, json=list_body("ai-mode", [], answer="a")),
+            httpx.Response(200, json=list_body("news", [])),
             httpx.Response(200, text="**a**", headers={"content-type": "text/markdown"}),
         ]
     )
     sk = SerpKite()
-    assert sk.request("ai_mode", {"q": "x", "country": None})["answer"] == "a"
-    assert sk.request("ai-mode", {"q": "x", "format": "markdown"}) == "**a**"
+    assert sk.request("news", {"q": "x", "country": None})["request"]["endpoint"] == "news"
+    assert sk.request("/news/", {"q": "x", "format": "markdown"}) == "**a**"
     assert sent_json(route, 0) == {"q": "x"}

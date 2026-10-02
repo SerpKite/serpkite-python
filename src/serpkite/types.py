@@ -13,8 +13,6 @@ from typing_extensions import TypedDict
 
 from ._models import (
     Account,
-    AIModeResponse,
-    AIOverview,
     AnswerBox,
     AutocompleteResponse,
     Batch,
@@ -39,7 +37,6 @@ from ._models import (
     PlacesResponse,
     RankRequest,
     RankResponse,
-    Reference,
     RelatedSearch,
     RequestEcho,
     ReviewResult,
@@ -73,8 +70,6 @@ from ._models import SearchInformation as CSESearchInformation
 from ._models import User as ReviewUser
 
 __all__ = [
-    "AIModeResponse",
-    "AIOverview",
     "Account",
     "AccountKey",
     "AccountMonth",
@@ -115,7 +110,6 @@ __all__ = [
     "RankParams",
     "RankRequest",
     "RankResponse",
-    "Reference",
     "RelatedSearch",
     "RequestEcho",
     "ReviewOwnerResponse",
@@ -184,8 +178,6 @@ BatchEndpoint = Literal[
     "patents",
     "autocomplete",
     "lens",
-    "ai-mode",
-    "ai_mode",
     "webpage",
 ]
 
@@ -219,7 +211,6 @@ class SearchParams(TypedDict, total=False):
     autocorrect: Optional[bool]
     include_content: Optional[int]
     """Also fetch the top N (0-5) organic pages as Markdown (+1 credit each, search only)."""
-    ai_overview: Optional[bool]
     ads: Optional[bool]
     """Include sponsored results."""
     max_age: Optional[int]
