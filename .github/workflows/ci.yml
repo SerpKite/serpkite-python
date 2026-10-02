@@ -1,0 +1,27 @@
+# Mirrored from the SerpKite monorepo (sdks/python); edits here are overwritten.
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      - run: uv sync --locked
+      - name: Generated models are up to date
+        run: ./scripts/gen_models.sh && git diff --exit-code -- src/serpkite/_models.py
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy
+      - run: uv run pytest -q
+      - name: Oldest supported Python (3.9)
+        run: uv run --isolated --python 3.9 pytest -q
+      - name: CrewAI extra
+        run: uv run --with "crewai>=0.80" pytest -q tests/test_crewai.py

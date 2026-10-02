@@ -1,0 +1,1296 @@
+openapi: 3.1.0
+info:
+  title: SerpKite SERP API
+  version: 1.0.1
+  description: |
+    Public search API (api.serpkite.com). Google results as clean JSON or Markdown
+    for AI agents, plus a Google Custom Search–compatible endpoint. Official SDKs:
+    `serpkite` on npm and PyPI, `github.com/serpkite/serpkite-go`.
+
+    **Auth:** `Authorization: Bearer skt_live_…`. GET requests may pass `?api_key=`
+    instead. `/customsearch/v1` also accepts Google's `?key=`.
+
+    **Bodies:** every vertical accepts `POST` with a JSON object or `GET` with the
+    same parameters in the query string (only `GET /v1/search` is spelled out
+    here). Unknown parameters are rejected with 400. To run many queries at once,
+    use `POST /v1/batches`.
+
+    **Formats:** `format=json` (default) returns the schemas below.
+    `format=markdown` returns `text/markdown` for every vertical.
+    `format=compact` and `fields=` return a reduced JSON object (same top-level
+    keys, fewer item fields, `meta` always kept), so required item fields may be
+    absent there.
+
+    **Responses** share one envelope: `request` (the normalised request),
+    `results` (the vertical's primary list), vertical-specific extras and `meta`.
+    All keys are snake_case.
+
+    **Credits** are decimal numbers (e.g. `0.5`). Failed, empty and blocked
+    responses are refunded. Every billed response carries `X-Credits-Used`,
+    `X-Credits-Remaining`, `X-Cost-USD`, `X-Cache` (`HIT`|`MISS`), `X-Latency-Ms`,
+    `X-Tokens-Estimate` and `X-Request-Id`.
+
+    **Errors** share one body: `{"error":{"code","message","request_id"}}`.
+    Upstream failures (`upstream_error`, `upstream_blocked`, `upstream_timeout`)
+    are `503` with `Retry-After`, never billed and safe to retry. The API never
+    returns `502` or `504`.
+
+    **CORS:** `Access-Control-Allow-Origin: *` without credentials; the `X-*`
+    headers above are exposed, so a browser playground can call the API with a key.
+    The keyless `/playground/search` is the exception: it only answers serpkite.com
+    and app.serpkite.com (other `Origin`s get 403).
+
+    Credit table: search/news/images/videos/maps/places/shopping/scholar/patents/
+    webpage/customsearch = 1 per page; `num=100` depth bundle = 7; reviews = 1 per 10;
+    autocomplete = 0.5; lens = 2; ai-mode = 3; `include_content` = +1 per fetched page;
+    batches ×0.5; cache hit via `max_age` ×0.5. `engine=consensus` (search only) =
+    the sum of one page per provider that returned results.
+servers:
+  - url: https://api.serpkite.com
+  - url: http://localhost:8080
+security:
+  - bearer: []
+paths:
+  /healthz:
+    get:
+      summary: Readiness (DB, Valkey)
+      security: []
+      responses:
+        "200": { description: OK }
+        "503": { description: A dependency is down }
+  /livez:
+    get:
+      summary: Liveness only
+      security: []
+      responses:
+        "200": { description: OK }
+
+  /v1/search:
+    post:
+      summary: Google web search (organic results, AI Overview, knowledge graph, answer box, people also ask, top stories, local pack…)
+      operationId: search
+      requestBody: { $ref: "#/components/requestBodies/Search" }
+      responses:
+        "200": { $ref: "#/components/responses/SearchOK" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "402": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+    get:
+      summary: Same as POST /v1/search with query-string parameters
+      operationId: searchGet
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string } }
+        - { name: country, in: query, schema: { type: string } }
+        - { name: language, in: query, schema: { type: string } }
+        - { name: location, in: query, schema: { type: string } }
+        - { name: num, in: query, schema: { type: integer } }
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: uule, in: query, schema: { type: string } }
+        - { name: ll, in: query, schema: { type: string } }
+        - { name: time, in: query, schema: { type: string } }
+        - { name: tbs, in: query, schema: { type: string } }
+        - { name: device, in: query, schema: { type: string } }
+        - { name: safe, in: query, schema: { type: string } }
+        - { name: autocorrect, in: query, schema: { type: boolean } }
+        - { name: format, in: query, schema: { type: string } }
+        - { name: fields, in: query, schema: { type: string } }
+        - { name: include_content, in: query, schema: { type: integer } }
+        - { name: ai_overview, in: query, schema: { type: boolean } }
+        - { name: ads, in: query, schema: { type: boolean } }
+        - { name: max_age, in: query, schema: { type: integer } }
+        - { name: engine, in: query, schema: { type: string }, description: "google (default), auto, consensus, one provider, or a comma-separated list (e.g. google,brave)" }
+        - { name: api_key, in: query, schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/SearchOK" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "402": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /v1/images:
+    post:
+      summary: Google Images
+      operationId: images
+      requestBody: { $ref: "#/components/requestBodies/Search" }
+      responses:
+        "200": { $ref: "#/components/responses/ImagesOK" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "402": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /v1/videos:
+    post:
+      summary: Google Videos
+      operationId: videos
+      requestBody: { $ref: "#/components/requestBodies/Search" }
+      responses:
+        "200": { $ref: "#/components/responses/VideosOK" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "402": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /v1/news:
+    post:
+      summary: Google News
+      operationId: news
+      requestBody: { $ref: "#/components/requestBodies/Search" }
+      responses:
+        "200": { $ref: "#/components/responses/NewsOK" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "402": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /v1/maps:
+    post:
+      summary: Google Maps search (places with coordinates). Accepts `ll` ("@lat,lng,zoomz")
+      operationId: maps
+      requestBody: { $ref: "#/components/requestBodies/Search" }
+      responses:
+        "200": { $ref: "#/components/responses/PlacesOK" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "402": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /v1/places:
+    post:
+      summary: Google local results (places)
+      operationId: places
+      requestBody: { $ref: "#/components/requestBodies/Search" }
+      responses:
+        "200": { $ref: "#/components/responses/PlacesOK" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "402": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /v1/reviews:
+    post:
+      summary: Reviews of a place (by `place_id`, `cid` or `fid`); 1 credit per 10 reviews
+      operationId: reviews
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReviewsRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/ReviewsOK" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "402": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /v1/shopping:
+    post:
+      summary: Google Shopping
+      operationId: shopping
+      requestBody: { $ref: "#/components/requestBodies/Search" }
+      responses:
+        "200": { $ref: "#/components/responses/ShoppingOK" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "402": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /v1/scholar:
+    post:
+      summary: Google Scholar
+      operationId: scholar
+      requestBody: { $ref: "#/components/requestBodies/Search" }
+      responses:
+        "200": { $ref: "#/components/responses/ScholarOK" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "402": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /v1/patents:
+    post:
+      summary: Google Patents
+      operationId: patents
+      requestBody: { $ref: "#/components/requestBodies/Search" }
+      responses:
+        "200": { $ref: "#/components/responses/PatentsOK" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "402": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /v1/autocomplete:
+    post:
+      summary: Google autocomplete suggestions (0.5 credit)
+      operationId: autocomplete
+      requestBody: { $ref: "#/components/requestBodies/Search" }
+      responses:
+        "200": { $ref: "#/components/responses/AutocompleteOK" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "402": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /v1/lens:
+    post:
+      summary: Google Lens visual matches for an image URL (2 credits)
+      operationId: lens
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LensRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/LensOK" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "402": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /v1/ai-mode:
+    post:
+      summary: Google AI Mode answer with citations (3 credits)
+      operationId: aiMode
+      requestBody: { $ref: "#/components/requestBodies/Search" }
+      responses:
+        "200": { $ref: "#/components/responses/AIModeOK" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "402": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /v1/webpage:
+    post:
+      summary: Fetch any public URL and return clean Markdown + metadata (1 credit)
+      operationId: webpage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebpageRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/WebpageOK" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "402": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /customsearch/v1:
+    get:
+      summary: Google Custom Search JSON API–compatible endpoint (for apps moving off CSE)
+      operationId: customSearch
+      parameters:
+        - { name: key, in: query, schema: { type: string }, description: API key (or Authorization Bearer) }
+        - { name: cx, in: query, schema: { type: string }, description: Accepted and ignored }
+        - { name: q, in: query, required: true, schema: { type: string } }
+        - { name: start, in: query, schema: { type: integer, minimum: 1, maximum: 91, default: 1 } }
+        - { name: num, in: query, schema: { type: integer, minimum: 1, maximum: 10, default: 10 } }
+        - { name: gl, in: query, schema: { type: string } }
+        - { name: hl, in: query, schema: { type: string } }
+        - { name: lr, in: query, schema: { type: string } }
+        - { name: safe, in: query, schema: { type: string, enum: [active, off] } }
+        - { name: dateRestrict, in: query, schema: { type: string, examples: [d7, w2, m6, y1] } }
+        - { name: siteSearch, in: query, schema: { type: string } }
+        - { name: searchType, in: query, schema: { type: string, enum: [image] } }
+      responses:
+        "200":
+          description: CSE-shaped response
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CSEResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "402": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /v1/rank:
+    post:
+      summary: Position of a domain for a keyword in the top N (default 100; priced like /v1/search depth, 7 credits for 100)
+      operationId: rank
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RankRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RankResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "402": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /v1/status:
+    get:
+      summary: Public live status — requests, success rate, p50/p95 latency per endpoint over the last hour
+      operationId: status
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Status" }
+
+  /v1/batches:
+    post:
+      summary: Queue up to 100 requests for one endpoint at half price. Each request becomes one batch job
+      operationId: createBatches
+      description: |
+        Credits for the whole batch are reserved together: if the balance, spend cap, key limit or
+        free daily cap can't cover every valid request, none is queued and each gets the error
+        (invalid requests get their own 400 entry either way). Each job is settled and refunded on
+        its own once it runs.
+
+        **Retries.** Send an `Idempotency-Key` to make the call safe to retry: for 24 hours a
+        repeat with the same key and the same body returns the first response (with
+        `Idempotent-Replayed: true`) without queueing or billing again. The same key with a
+        different body is rejected with 422 `idempotency_key_reused`; a repeat while the first
+        call is still running gets 409.
+
+        **Webhooks.** Every delivery is a `POST` with `X-SerpKite-Event: batch.completed`,
+        `X-SerpKite-Delivery` (the job id), `X-SerpKite-Timestamp` (Unix seconds) and
+        `X-SerpKite-Signature: v1=<hex HMAC-SHA256(secret, "<timestamp>.<raw body>")>`. Deliveries
+        are always signed; the account's secret is created with its first webhook and revealed by
+        rotating it (dashboard Settings → Webhooks). Verify by recomputing the HMAC over the raw
+        body, comparing in constant time, and rejecting timestamps older than 5 minutes. The SDKs
+        ship `verifyWebhook` / `verify_webhook` / `VerifyWebhook`.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: 1-255 printable ASCII characters (e.g. a UUID). Retries with the same key and body replay the first response for 24 h
+          schema: { type: string, minLength: 1, maxLength: 255 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BatchCreateRequest" }
+      responses:
+        "202":
+          description: Queued. One entry per request, in order; an entry is a batch job or an error object
+          headers:
+            Idempotent-Replayed:
+              description: "`true` when this is the stored response of an earlier call with the same Idempotency-Key"
+              schema: { type: string, enum: ["true"] }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BatchCreateResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "402": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /v1/batches/{id}:
+    get:
+      summary: Poll a batch job
+      operationId: getBatch
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Batch" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /v1/account:
+    get:
+      summary: Balance, limits and this month's usage for the calling key's account
+      operationId: account
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Account" }
+        "401": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /playground/search:
+    post:
+      summary: No-login demo of /v1/search (and news, images, autocomplete via `endpoint`). Per-IP rate limited (IPv6 per /64), not billed. Browser calls only from serpkite.com and app.serpkite.com
+      operationId: playground
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/SearchRequest"
+                - type: object
+                  properties:
+                    endpoint: { type: string, enum: [search, news, images, autocomplete], default: search }
+                    turnstile_token: { type: string, description: "Cloudflare Turnstile token, required when the server enforces Turnstile. Single-use: get a fresh one for every request" }
+      responses:
+        "200":
+          description: Same body as the corresponding endpoint
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/Error" }
+        "403":
+          description: Bot check failed (missing, spent or foreign Turnstile token) or the Origin is not one of our sites
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /v1/mcp:
+    post:
+      summary: Remote MCP server (streamable HTTP, JSON-RPC 2.0). Tools search, news, maps, scholar, webpage, ai_overview
+      operationId: mcp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        "200":
+          description: JSON-RPC response
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "202": { description: Notification accepted }
+        "401": { $ref: "#/components/responses/Error" }
+
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer }
+
+  requestBodies:
+    Search:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/SearchRequest" }
+
+  headers:
+    CreditsUsed: { schema: { type: number } }
+    CreditsRemaining: { schema: { type: number } }
+    CostUSD: { schema: { type: number } }
+    Cache: { schema: { type: string, enum: [HIT, MISS] } }
+    LatencyMs: { schema: { type: integer } }
+    TokensEstimate: { schema: { type: integer } }
+    RetryAfter:
+      description: Seconds to wait before retrying
+      schema: { type: integer }
+
+  responses:
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unavailable:
+      description: |
+        Temporarily unavailable, not billed, safe to retry after `Retry-After`.
+        Codes: `upstream_error` (the upstream page couldn't be fetched or parsed),
+        `upstream_blocked` (the upstream is rate limiting us), `upstream_timeout`
+        (the search took too long), `unavailable` (endpoint or dependency down).
+        The API never sends 502 or 504.
+      headers:
+        Retry-After: { $ref: "#/components/headers/RetryAfter" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    SearchOK:
+      description: OK (text/markdown when format=markdown)
+      headers: &billingHeaders
+        X-Credits-Used: { $ref: "#/components/headers/CreditsUsed" }
+        X-Credits-Remaining: { $ref: "#/components/headers/CreditsRemaining" }
+        X-Cost-USD: { $ref: "#/components/headers/CostUSD" }
+        X-Cache: { $ref: "#/components/headers/Cache" }
+        X-Latency-Ms: { $ref: "#/components/headers/LatencyMs" }
+        X-Tokens-Estimate: { $ref: "#/components/headers/TokensEstimate" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/SearchResponse" }
+        text/markdown:
+          schema: { type: string }
+    ImagesOK:
+      description: OK (text/markdown when format=markdown)
+      headers: *billingHeaders
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ImagesResponse" }
+        text/markdown:
+          schema: { type: string }
+    VideosOK:
+      description: OK (text/markdown when format=markdown)
+      headers: *billingHeaders
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/VideosResponse" }
+        text/markdown:
+          schema: { type: string }
+    NewsOK:
+      description: OK (text/markdown when format=markdown)
+      headers: *billingHeaders
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/NewsResponse" }
+        text/markdown:
+          schema: { type: string }
+    PlacesOK:
+      description: OK (text/markdown when format=markdown)
+      headers: *billingHeaders
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/PlacesResponse" }
+        text/markdown:
+          schema: { type: string }
+    ReviewsOK:
+      description: OK (text/markdown when format=markdown)
+      headers: *billingHeaders
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReviewsResponse" }
+        text/markdown:
+          schema: { type: string }
+    ShoppingOK:
+      description: OK (text/markdown when format=markdown)
+      headers: *billingHeaders
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ShoppingResponse" }
+        text/markdown:
+          schema: { type: string }
+    ScholarOK:
+      description: OK (text/markdown when format=markdown)
+      headers: *billingHeaders
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ScholarResponse" }
+        text/markdown:
+          schema: { type: string }
+    PatentsOK:
+      description: OK (text/markdown when format=markdown)
+      headers: *billingHeaders
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/PatentsResponse" }
+        text/markdown:
+          schema: { type: string }
+    AutocompleteOK:
+      description: OK (text/markdown when format=markdown)
+      headers: *billingHeaders
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/AutocompleteResponse" }
+        text/markdown:
+          schema: { type: string }
+    LensOK:
+      description: OK (text/markdown when format=markdown)
+      headers: *billingHeaders
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/LensResponse" }
+        text/markdown:
+          schema: { type: string }
+    AIModeOK:
+      description: OK (text/markdown when format=markdown)
+      headers: *billingHeaders
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/AIModeResponse" }
+        text/markdown:
+          schema: { type: string }
+    WebpageOK:
+      description: OK (text/markdown when format=markdown)
+      headers: *billingHeaders
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/WebpageResponse" }
+        text/markdown:
+          schema: { type: string }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: "403: spend_cap_reached, key_limit_reached, forbidden. 409/422: idempotency_key_reused. 429: rate_limited, daily_limit_reached. 503: upstream_error, upstream_blocked, upstream_timeout, unavailable (the API never sends 502 or 504)"
+              examples: [unauthorized, invalid_request, insufficient_credits, rate_limited, daily_limit_reached, spend_cap_reached, key_limit_reached, idempotency_key_reused, forbidden, not_found, upstream_error, upstream_blocked, upstream_timeout, unavailable, internal]
+            message: { type: string }
+            request_id: { type: string }
+
+    SearchRequest:
+      type: object
+      required: [q]
+      properties:
+        q: { type: string, minLength: 1, maxLength: 2048 }
+        country: { type: string, default: us, description: Country code (ISO 3166-1 alpha-2) }
+        language: { type: string, default: en, description: Interface language (e.g. en, de, pt-br) }
+        location: { type: string, description: 'Free-text location, e.g. "Austin, Texas, United States"' }
+        uule: { type: string, description: Pre-encoded Google location (overrides location) }
+        ll: { type: string, description: 'Maps viewport "@lat,lng,14z" (maps only)' }
+        num: { type: integer, default: 10, description: "10, or up to 100 for the depth bundle on search and news (7 credits for 100; values between round up to whole pages). Other verticals return one page of 10" }
+        page: { type: integer, default: 1, minimum: 1, maximum: 10 }
+        time: { type: string, enum: [hour, day, week, month, year], description: Only results from the last hour/day/… }
+        tbs: { type: string, description: "Advanced: raw Google tbs filter (e.g. qdr:d); overrides time" }
+        device: { type: string, enum: [desktop, mobile], default: desktop }
+        safe: { type: string, enum: [active, off], default: off }
+        autocorrect: { type: boolean, default: true }
+        format: { type: string, enum: [json, markdown, compact], default: json }
+        fields: { type: string, description: 'Comma-separated projection, e.g. "results.title,results.link,ai_overview"' }
+        include_content: { type: integer, minimum: 0, maximum: 5, default: 0, description: Also fetch the top N organic pages as Markdown (+1 credit each fetched page) }
+        ai_overview: { type: boolean, default: true }
+        ads: { type: boolean, default: false, description: Include sponsored results }
+        max_age: { type: integer, minimum: 0, description: Accept a cached result up to this many seconds old (50% of credits on a hit) }
+        engine: { $ref: "#/components/schemas/EngineParam" }
+
+    ReviewsRequest:
+      type: object
+      description: One of place_id, cid or fid is required
+      properties:
+        place_id: { type: string }
+        cid: { type: string }
+        fid: { type: string }
+        country: { type: string }
+        language: { type: string }
+        sort: { type: string, enum: [most_relevant, newest, highest_rating, lowest_rating], default: most_relevant }
+        page_token:
+          type: string
+          description: >-
+            `next_page_token` from the previous page, unchanged. Opaque and bound to the place and `sort`
+            it was issued for (anything else is a 400). Paging reaches the first 100 reviews of a place per sort order.
+        num: { type: integer, default: 10, maximum: 50, description: "Reviews per page (a page can be shorter when Google stops loading early; `next_page_token` then resumes after it)" }
+        format: { type: string, enum: [json, markdown, compact] }
+        fields: { type: string }
+        max_age: { type: integer }
+
+    LensRequest:
+      type: object
+      required: [url]
+      properties:
+        url: { type: string, format: uri, description: Image URL }
+        country: { type: string }
+        language: { type: string }
+        format: { type: string, enum: [json, markdown, compact] }
+        fields: { type: string }
+        max_age: { type: integer }
+
+    WebpageRequest:
+      type: object
+      required: [url]
+      properties:
+        url: { type: string, format: uri }
+        format: { type: string, enum: [json, markdown, compact], default: json }
+        include_html: { type: boolean, default: false }
+        max_age: { type: integer }
+
+    Provider:
+      type: string
+      description: A search provider (docs/providers). Which verticals each serves depends on the deployment.
+      enum: [google, brave, bing, yahoo, duckduckgo, mojeek, wikipedia]
+
+    EngineParam:
+      description: >-
+        Which search providers may answer. `google` (the default) is Google only; within Google, SerpKite
+        always fails over across its own proxy pools. `auto` allows falling back to other enabled providers,
+        in route order, when Google is blocked or times out. A single other provider (`brave`) or a list
+        (`["google","brave"]`, or `google,brave` in a query string) restricts the request to those providers.
+        `meta.engine` always names the provider that answered and credits follow that provider's price.
+        A key with "Allow fallback to other search engines" on treats a request without `engine` as `auto`.
+        `consensus` (`/v1/search` only; 400 elsewhere, and it can't be combined with other names) queries
+        several independent search indexes in parallel (at most one Bing-backed provider, so Yahoo or
+        DuckDuckGo never count as agreeing with Bing), merges the results by URL and ranks them by how many
+        providers returned each one. Each result lists its `sources`; `meta.engine` is `consensus` and
+        `meta.route` lists every provider attempt. It stops once `num` unique results are in hand or after
+        a few seconds, and costs the sum of one page at each provider that returned results (providers that
+        failed, came back empty or were never started are free).
+      oneOf:
+        - type: string
+          default: google
+          examples: [google, auto, consensus, brave, "google,brave"]
+        - type: array
+          items: { $ref: "#/components/schemas/Provider" }
+          minItems: 1
+
+    RouteStep:
+      type: object
+      description: One provider attempt behind this answer. Proxy pools are internal and never listed.
+      required: [provider, outcome, ms]
+      properties:
+        provider: { type: string, examples: [google, brave] }
+        outcome:
+          type: string
+          enum: [ok, partial, empty, soft_empty, blocked, timeout, error, unsupported, bad_param, bad_target, canceled]
+        ms: { type: integer, description: Duration of the attempt in milliseconds }
+
+    Meta:
+      type: object
+      required: [request_id, credits_used, cached]
+      properties:
+        request_id: { type: string }
+        credits_used: { type: number }
+        engine: { type: string, description: "The provider that produced the result (`consensus` for a merged engine=consensus answer)", examples: [google, brave, consensus, stub] }
+        route:
+          type: array
+          description: Provider attempts in order (fresh results only; absent on cache hits). With engine=consensus, every provider started; ones stopped early are `canceled`, ones cut off by the deadline `timeout`
+          items: { $ref: "#/components/schemas/RouteStep" }
+        cached: { type: boolean }
+        cached_at: { type: string, format: date-time }
+        resolved_urls: { type: boolean }
+        parse_quality: { type: string, enum: [ok, partial, empty] }
+        latency_ms: { type: integer }
+
+    RequestEcho:
+      type: object
+      description: The normalised request that produced this response (defaults filled in)
+      required: [endpoint, engine]
+      additionalProperties: true
+      properties:
+        endpoint: { type: string, examples: [search, news, ai-mode] }
+        engine:
+          description: The engine policy as asked (google, auto, one provider or a list)
+          oneOf:
+            - { type: string }
+            - { type: array, items: { type: string } }
+        q: { type: string }
+        url: { type: string }
+        country: { type: string }
+        language: { type: string }
+        location: { type: string }
+        num: { type: integer }
+        page: { type: integer }
+        device: { type: string }
+        autocorrect: { type: boolean }
+        tbs: { type: string }
+        safe: { type: string }
+        place_id: { type: string }
+        cid: { type: string }
+        fid: { type: string }
+        sort: { type: string }
+        include_content: { type: integer }
+        format: { type: string }
+
+    Sitelink:
+      type: object
+      required: [title, link]
+      properties:
+        title: { type: string }
+        link: { type: string }
+        snippet: { type: string }
+
+    OrganicResult:
+      type: object
+      required: [position, title, link, domain]
+      properties:
+        position: { type: integer }
+        title: { type: string }
+        link: { type: string, description: Resolved destination URL (never a google.com/url or /goto redirect) }
+        domain: { type: string, description: Canonical host without www. }
+        displayed_link: { type: string }
+        snippet: { type: string }
+        date: { type: string }
+        sitelinks: { type: array, items: { $ref: "#/components/schemas/Sitelink" } }
+        attributes: { type: object, additionalProperties: { type: string } }
+        rating: { type: number }
+        rating_count: { type: integer }
+        content: { type: string, description: Page Markdown when include_content covered this result }
+        sources:
+          type: array
+          description: engine=consensus only. The providers that returned this result, in route order; results are ranked by how many there are
+          items: { $ref: "#/components/schemas/Provider" }
+          examples: [[google, brave, bing]]
+
+    Reference:
+      type: object
+      required: [link]
+      properties:
+        title: { type: string }
+        link: { type: string }
+        domain: { type: string }
+        snippet: { type: string }
+
+    AIOverview:
+      type: object
+      properties:
+        text: { type: string }
+        markdown: { type: string }
+        references: { type: array, items: { $ref: "#/components/schemas/Reference" } }
+
+    AnswerBox:
+      type: object
+      properties:
+        title: { type: string }
+        answer: { type: string }
+        snippet: { type: string }
+        snippet_highlighted: { type: array, items: { type: string } }
+        link: { type: string }
+
+    KnowledgeGraph:
+      type: object
+      properties:
+        title: { type: string }
+        type: { type: string }
+        website: { type: string }
+        image_url: { type: string }
+        description: { type: string }
+        description_source: { type: string }
+        description_link: { type: string }
+        attributes: { type: object, additionalProperties: { type: string } }
+
+    PeopleAlsoAsk:
+      type: object
+      required: [question]
+      properties:
+        question: { type: string }
+        snippet: { type: string }
+        title: { type: string }
+        link: { type: string }
+
+    RelatedSearch:
+      type: object
+      required: [query]
+      properties:
+        query: { type: string }
+
+    SearchResponse:
+      type: object
+      required: [request, results, ai_overview, related_searches, meta]
+      properties:
+        request: { $ref: "#/components/schemas/RequestEcho" }
+        results: { type: array, items: { $ref: "#/components/schemas/OrganicResult" } }
+        ai_overview: { oneOf: [{ $ref: "#/components/schemas/AIOverview" }, { type: "null" }] }
+        answer_box: { $ref: "#/components/schemas/AnswerBox" }
+        knowledge_graph: { $ref: "#/components/schemas/KnowledgeGraph" }
+        ads: { type: array, items: { $ref: "#/components/schemas/OrganicResult" } }
+        people_also_ask: { type: array, items: { $ref: "#/components/schemas/PeopleAlsoAsk" } }
+        related_searches: { type: array, items: { $ref: "#/components/schemas/RelatedSearch" } }
+        top_stories: { type: array, items: { $ref: "#/components/schemas/NewsResult" } }
+        places: { type: array, items: { $ref: "#/components/schemas/PlaceResult" } }
+        meta: { $ref: "#/components/schemas/Meta" }
+
+    ImageResult:
+      type: object
+      required: [position, title, image_url]
+      properties:
+        position: { type: integer }
+        title: { type: string }
+        image_url: { type: string }
+        image_width: { type: integer }
+        image_height: { type: integer }
+        thumbnail_url: { type: string }
+        source: { type: string }
+        domain: { type: string }
+        link: { type: string }
+    ImagesResponse:
+      type: object
+      required: [request, results, meta]
+      properties:
+        request: { $ref: "#/components/schemas/RequestEcho" }
+        results: { type: array, items: { $ref: "#/components/schemas/ImageResult" } }
+        meta: { $ref: "#/components/schemas/Meta" }
+
+    VideoResult:
+      type: object
+      required: [position, title, link]
+      properties:
+        position: { type: integer }
+        title: { type: string }
+        link: { type: string }
+        domain: { type: string }
+        snippet: { type: string }
+        image_url: { type: string }
+        duration: { type: string }
+        source: { type: string }
+        channel: { type: string }
+        date: { type: string }
+    VideosResponse:
+      type: object
+      required: [request, results, meta]
+      properties:
+        request: { $ref: "#/components/schemas/RequestEcho" }
+        results: { type: array, items: { $ref: "#/components/schemas/VideoResult" } }
+        meta: { $ref: "#/components/schemas/Meta" }
+
+    NewsResult:
+      type: object
+      required: [position, title, link]
+      properties:
+        position: { type: integer }
+        title: { type: string }
+        link: { type: string }
+        domain: { type: string }
+        snippet: { type: string }
+        date: { type: string }
+        source: { type: string }
+        image_url: { type: string }
+    NewsResponse:
+      type: object
+      required: [request, results, meta]
+      properties:
+        request: { $ref: "#/components/schemas/RequestEcho" }
+        results: { type: array, items: { $ref: "#/components/schemas/NewsResult" } }
+        meta: { $ref: "#/components/schemas/Meta" }
+
+    PlaceResult:
+      type: object
+      required: [position, title]
+      properties:
+        position: { type: integer }
+        title: { type: string }
+        address: { type: string }
+        latitude: { type: number }
+        longitude: { type: number }
+        rating: { type: number }
+        rating_count: { type: integer }
+        price_level: { type: string }
+        type: { type: string }
+        types: { type: array, items: { type: string } }
+        website: { type: string }
+        phone_number: { type: string }
+        opening_hours: { type: object, additionalProperties: { type: string } }
+        thumbnail_url: { type: string }
+        place_id: { type: string }
+        cid: { type: string }
+        fid: { type: string }
+    PlacesResponse:
+      type: object
+      required: [request, results, meta]
+      properties:
+        request: { $ref: "#/components/schemas/RequestEcho" }
+        results: { type: array, items: { $ref: "#/components/schemas/PlaceResult" } }
+        meta: { $ref: "#/components/schemas/Meta" }
+
+    ReviewResult:
+      type: object
+      properties:
+        rating: { type: number }
+        date: { type: string }
+        iso_date: { type: string }
+        snippet: { type: string }
+        likes: { type: integer }
+        user:
+          type: object
+          properties:
+            name: { type: string }
+            thumbnail: { type: string }
+            reviews: { type: integer }
+        response: { type: object, properties: { snippet: { type: string }, date: { type: string } } }
+    ReviewsResponse:
+      type: object
+      required: [request, results, meta]
+      properties:
+        request: { $ref: "#/components/schemas/RequestEcho" }
+        results: { type: array, items: { $ref: "#/components/schemas/ReviewResult" } }
+        next_page_token: { type: string, description: "Pass as `page_token` for the next page. Absent on the last page and at the 100-review depth limit" }
+        meta: { $ref: "#/components/schemas/Meta" }
+
+    ShoppingResult:
+      type: object
+      required: [position, title]
+      properties:
+        position: { type: integer }
+        title: { type: string }
+        source: { type: string }
+        link: { type: string }
+        price: { type: string }
+        price_value: { type: number }
+        currency: { type: string }
+        delivery: { type: string }
+        image_url: { type: string }
+        rating: { type: number }
+        rating_count: { type: integer }
+        offers: { type: string }
+        product_id: { type: string }
+    ShoppingResponse:
+      type: object
+      required: [request, results, meta]
+      properties:
+        request: { $ref: "#/components/schemas/RequestEcho" }
+        results: { type: array, items: { $ref: "#/components/schemas/ShoppingResult" } }
+        meta: { $ref: "#/components/schemas/Meta" }
+
+    ScholarResult:
+      type: object
+      required: [position, title, link]
+      properties:
+        position: { type: integer }
+        title: { type: string }
+        link: { type: string }
+        domain: { type: string }
+        publication_info: { type: string }
+        snippet: { type: string }
+        year: { type: integer }
+        cited_by: { type: integer }
+        pdf_url: { type: string }
+        id: { type: string }
+    ScholarResponse:
+      type: object
+      required: [request, results, meta]
+      properties:
+        request: { $ref: "#/components/schemas/RequestEcho" }
+        results: { type: array, items: { $ref: "#/components/schemas/ScholarResult" } }
+        meta: { $ref: "#/components/schemas/Meta" }
+
+    PatentResult:
+      type: object
+      required: [position, title, link]
+      properties:
+        position: { type: integer }
+        title: { type: string }
+        snippet: { type: string }
+        link: { type: string }
+        publication_number: { type: string }
+        priority_date: { type: string }
+        filing_date: { type: string }
+        grant_date: { type: string }
+        publication_date: { type: string }
+        inventor: { type: string }
+        assignee: { type: string }
+        language: { type: string }
+        pdf_url: { type: string }
+        thumbnail_url: { type: string }
+    PatentsResponse:
+      type: object
+      required: [request, results, meta]
+      properties:
+        request: { $ref: "#/components/schemas/RequestEcho" }
+        results: { type: array, items: { $ref: "#/components/schemas/PatentResult" } }
+        meta: { $ref: "#/components/schemas/Meta" }
+
+    Suggestion:
+      type: object
+      required: [value]
+      properties:
+        value: { type: string }
+    AutocompleteResponse:
+      type: object
+      required: [request, results, meta]
+      properties:
+        request: { $ref: "#/components/schemas/RequestEcho" }
+        results: { type: array, items: { $ref: "#/components/schemas/Suggestion" } }
+        meta: { $ref: "#/components/schemas/Meta" }
+
+    LensResult:
+      type: object
+      required: [position, title, link]
+      properties:
+        position: { type: integer }
+        title: { type: string }
+        source: { type: string }
+        link: { type: string }
+        domain: { type: string }
+        image_url: { type: string }
+        thumbnail_url: { type: string }
+    LensResponse:
+      type: object
+      required: [request, results, meta]
+      properties:
+        request: { $ref: "#/components/schemas/RequestEcho" }
+        results: { type: array, items: { $ref: "#/components/schemas/LensResult" } }
+        meta: { $ref: "#/components/schemas/Meta" }
+
+    AIModeResponse:
+      type: object
+      required: [request, answer, results, meta]
+      properties:
+        request: { $ref: "#/components/schemas/RequestEcho" }
+        answer: { type: string }
+        markdown: { type: string }
+        results: { type: array, description: Cited sources, items: { $ref: "#/components/schemas/Reference" } }
+        meta: { $ref: "#/components/schemas/Meta" }
+
+    PageMetadata:
+      type: object
+      properties:
+        title: { type: string }
+        description: { type: string }
+        language: { type: string }
+        canonical: { type: string }
+        site_name: { type: string }
+        image: { type: string }
+        published_time: { type: string }
+        author: { type: string }
+    WebpageResponse:
+      type: object
+      required: [request, url, markdown, metadata, meta]
+      properties:
+        request: { $ref: "#/components/schemas/RequestEcho" }
+        url: { type: string, description: Final URL after redirects }
+        status_code: { type: integer }
+        markdown: { type: string }
+        text: { type: string }
+        html: { type: string, description: Only with include_html=true }
+        metadata: { $ref: "#/components/schemas/PageMetadata" }
+        meta: { $ref: "#/components/schemas/Meta" }
+
+    CSEResponse:
+      type: object
+      required: [kind, searchInformation, items]
+      properties:
+        kind: { type: string, const: customsearch#search }
+        url: { type: object }
+        queries: { type: object, additionalProperties: true }
+        context: { type: object }
+        searchInformation:
+          type: object
+          properties:
+            searchTime: { type: number }
+            formattedSearchTime: { type: string }
+            totalResults: { type: string }
+            formattedTotalResults: { type: string }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              kind: { type: string, const: customsearch#result }
+              title: { type: string }
+              htmlTitle: { type: string }
+              link: { type: string }
+              displayLink: { type: string }
+              snippet: { type: string }
+              htmlSnippet: { type: string }
+              formattedUrl: { type: string }
+              htmlFormattedUrl: { type: string }
+              pagemap: { type: object, additionalProperties: true }
+              image: { type: object, additionalProperties: true }
+
+    RankRequest:
+      type: object
+      required: [q, domain]
+      properties:
+        q: { type: string }
+        domain: { type: string, description: 'Domain to find, e.g. "example.com" (subdomains match)' }
+        num: { type: integer, enum: [10, 20, 30, 50, 100], default: 100 }
+        country: { type: string }
+        language: { type: string }
+        location: { type: string }
+        device: { type: string, enum: [desktop, mobile] }
+        max_age: { type: integer }
+    RankResponse:
+      type: object
+      required: [request, domain, position, matches, checked, meta]
+      properties:
+        request: { $ref: "#/components/schemas/RequestEcho" }
+        domain: { type: string }
+        position: { type: [integer, "null"], description: Best organic position, null when not in the checked results }
+        matches:
+          type: array
+          items:
+            type: object
+            required: [position, title, link]
+            properties:
+              position: { type: integer }
+              title: { type: string }
+              link: { type: string }
+        checked: { type: integer, description: Organic results inspected }
+        meta: { $ref: "#/components/schemas/Meta" }
+
+    Status:
+      type: object
+      required: [status, window_minutes, endpoints, updated_at]
+      properties:
+        status: { type: string, enum: [operational, degraded] }
+        window_minutes: { type: integer }
+        updated_at: { type: string, format: date-time }
+        endpoints:
+          type: array
+          items:
+            type: object
+            required: [endpoint, requests, success_rate, p50_ms, p95_ms]
+            properties:
+              endpoint: { type: string }
+              requests: { type: integer }
+              success_rate: { type: number, description: Share of requests without a 5xx (0-1) }
+              p50_ms: { type: integer }
+              p95_ms: { type: integer }
+
+    BatchCreateRequest:
+      type: object
+      required: [endpoint, requests]
+      properties:
+        endpoint:
+          type: string
+          enum: [search, images, videos, news, maps, places, reviews, shopping, scholar, patents, autocomplete, lens, ai-mode, webpage]
+        requests:
+          type: array
+          minItems: 1
+          maxItems: 100
+          description: Request bodies for `endpoint` (same fields as the realtime endpoint)
+          items: { type: object, additionalProperties: true }
+        webhook_url: { type: string, format: uri, description: "POSTed each job's result, always signed with X-SerpKite-Signature (v1=hex HMAC-SHA256 of `<timestamp>.<body>` with the account webhook secret; see createBatches). Defaults to the account webhook" }
+    BatchCreateResponse:
+      type: object
+      required: [batches]
+      properties:
+        batches:
+          type: array
+          items:
+            oneOf:
+              - $ref: "#/components/schemas/Batch"
+              - $ref: "#/components/schemas/Error"
+
+    Batch:
+      type: object
+      required: [id, status, endpoint, created_at, poll_url]
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [queued, running, done, failed] }
+        endpoint: { type: string, examples: [/v1/search] }
+        created_at: { type: string, format: date-time }
+        completed_at: { type: [string, "null"], format: date-time }
+        credits_used: { type: number }
+        poll_url: { type: string }
+        webhook_url: { type: [string, "null"] }
+        webhook_status: { type: [string, "null"], enum: [pending, delivered, failed, null] }
+        error: { type: [object, "null"], properties: { code: { type: string }, message: { type: string } } }
+        result: { type: [object, "null"], additionalProperties: true, description: "Present when done; kept 24h. The endpoint's response body, or {markdown, meta} for format=markdown jobs" }
+
+    Account:
+      type: object
+      required: [balance, rate_limit_rps, plan, month]
+      properties:
+        balance: { type: number, description: "Negative after a refund of credits that were already spent; requests then get 402 insufficient_credits" }
+        rate_limit_rps: { type: integer }
+        plan: { type: string, enum: [free, paid] }
+        key: { type: object, properties: { id: { type: string }, name: { type: string }, credit_limit: { type: [number, "null"] }, credits_used_month: { type: number } } }
+        monthly_spend_cap: { type: [number, "null"] }
+        month:
+          type: object
+          required: [credits, requests]
+          properties:
+            credits: { type: number }
+            requests: { type: integer }

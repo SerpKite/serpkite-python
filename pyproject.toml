@@ -1,0 +1,93 @@
+[project]
+name = "serpkite"
+version = "0.1.0"
+description = "Official Python SDK for SerpKite, the Google search API built for AI agents: clean JSON or Markdown results."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.9"
+authors = [{ name = "SerpKite", email = "support@serpkite.com" }]
+keywords = ["serpkite", "google", "search", "serp", "api", "ai", "agents", "llm", "markdown"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
+  "Typing :: Typed",
+]
+dependencies = [
+  "httpx>=0.27",
+  "pydantic>=2.6",
+  "typing-extensions>=4.7",
+  # Lets pydantic evaluate `X | None` annotations in the generated models on Python 3.9.
+  "eval-type-backport>=0.2; python_version < '3.10'",
+]
+
+[project.optional-dependencies]
+crewai = ["crewai>=0.80; python_version >= '3.10'"]
+
+[project.urls]
+Homepage = "https://serpkite.com"
+Documentation = "https://serpkite.com/docs/sdks/python"
+Repository = "https://github.com/serpkite/serpkite-python"
+
+[dependency-groups]
+dev = [
+  "pytest>=8",
+  "pytest-asyncio>=0.23",
+  "respx>=0.21",
+  "ruff>=0.6",
+  "mypy>=1.10",
+  "datamodel-code-generator>=0.30; python_version >= '3.10'",
+]
+
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/serpkite"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/serpkite", "tests", "README.md", "LICENSE", "pyproject.toml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+target-version = "py39"
+line-length = 110
+src = ["src", "tests"]
+extend-exclude = ["src/serpkite/_models.py", "*.md"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["UP006", "UP007", "UP035", "UP045"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+files = ["src/serpkite", "tests"]
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["crewai", "crewai.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# The public overloads pin each method's return type; the shared _vertical helper returns Any.
+module = ["serpkite._client"]
+warn_return_any = false
+
+[[tool.mypy.overrides]]
+module = ["serpkite.crewai"]
+disallow_subclassing_any = false
+warn_unused_ignores = false
