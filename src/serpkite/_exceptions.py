@@ -130,6 +130,17 @@ class BatchTimeoutError(SerpKiteError, TimeoutError):
         self.batch_id = batch_id
 
 
+class TaskTimeoutError(SerpKiteError, TimeoutError):
+    """``wait_for_crawl`` gave up before the task finished.
+
+    The task keeps running server-side; poll it again later (results are kept 24 h).
+    """
+
+    def __init__(self, task_id: str, timeout: float) -> None:
+        super().__init__(None, "task_timeout", f"task {task_id} did not finish within {timeout:g}s")
+        self.task_id = task_id
+
+
 def error_class(status: int) -> type[SerpKiteError]:
     if status == 400:
         return BadRequestError

@@ -74,6 +74,10 @@ Every query vertical takes `q` plus optional keyword parameters: `country`, `lan
 | `sk.autocomplete(q, **params)` | `/v1/autocomplete` | `AutocompleteResponse` |
 | `sk.webpage(url, include_html=False)` | `/v1/webpage` | `WebpageResponse` (`markdown`, `text`, `metadata`) |
 | `sk.rank(q, domain, num=100)` | `/v1/rank` | `RankResponse` (`position` or `None`, `matches`) |
+| `sk.extract(urls, query=, highlights=, format=, …)` | `/v1/extract` | `ExtractResponse` (`results`, `failed`) |
+| `sk.map(url, search=, limit=, sitemap=, include_paths=, …)` | `/v1/map` | `MapResponse` (`results[].url`) |
+| `sk.crawl(url, limit=, max_depth=, …)` / `get_crawl` / `cancel_crawl` / `wait_for_crawl` | `/v1/crawl` | see [Crawl](#crawl) |
+| `sk.monitors.create / list / get / update / delete / run / runs / iter_runs` | `/v1/monitors` | see [Monitors](#monitors) |
 | `sk.account()` | `/v1/account` | `Account` (balance, limits, month usage) |
 | `sk.batches.create / get / wait` | `/v1/batches` | see [Batches](#batches) |
 | `sk.request(endpoint, params)` | `/v1/<endpoint>` | low-level: `str` for Markdown, else `dict` |
@@ -106,6 +110,25 @@ print(r.position, r.checked)
 
 # Accept a cached result up to an hour old (half the credits on a hit)
 sk.news("fed rate decision", max_age=3600)
+```
+
+## Search controls
+
+Domain filters and date ranges work on search, news, images and videos; `boost_domains` on search
+and news; `highlights` on search with `include_content`. None of them costs extra credits.
+
+```python
+res = sk.search(
+    "connection pooling",
+    include_domains=["postgresql.org", "github.com/pgbouncer", ".edu"],  # host, path prefix or TLD (<= 20)
+    exclude_domains=["pinterest.com"],
+    boost_domains=["postgresql.org"],  # to the top, keeping the rest
+    start_date="2026-01-01",  # YYYY-MM-DD or a date; end_date too
+    include_content=3,
+    highlights=True,  # 3 query-ranked passages per page instead of the whole page
+)
+for r in res.results:
+    print(r.position, r.published_at, r.highlights[0].text if r.highlights else None)
 ```
 
 ## Search engines & fallback
@@ -187,6 +210,73 @@ connection errors up to `max_retries` times. It uses exponential backoff with ji
 `Retry-After`. It never retries `daily_limit_reached`. Batch creation is retried only when the
 request provably never reached the server, unless you pass `idempotency_key`.
 
+## Map and extract
+
+```python
+# The URLs of a site (1 credit): sitemaps + start page, canonicalised and deduplicated
+site = sk.map("https://docs.example.com/", search="install", include_paths=["^/guides/"])
+
+# Up to 20 URLs (HTML or PDF) as Markdown in one call: 1 credit per URL that came back
+pages = sk.extract([u.url for u in site.results[:5]], query="install", highlights=3)
+for f in pages.failed:  # not charged
+    print("failed", f.url, f.error.code)
+```
+
+## Crawl
+
+```python
+task = sk.crawl(
+    "https://docs.example.com/",
+    limit=200,  # up to 1000 pages; max_depth up to 10
+    include_paths=["^/guides/"],
+    sitemap="include",  # include (default) | only | skip
+    query="authentication",  # read the most relevant pages first
+)
+done = sk.wait_for_crawl(task.id)  # completed, failed or canceled
+if done.result:
+    for p in done.result.pages:
+        print(p.url, len(p.markdown or ""))
+    print(done.result.stats.stopped)  # done | limit | time_limit | size_limit | too_many_failures | canceled
+```
+
+- `crawl` reserves `limit` credits and charges 1 per page read (0.5 from cache); the rest is
+  refunded. It is only retried on 429, so a lost response never starts a second crawl.
+- `wait_for_crawl` polls with a growing interval (up to 15 s) and returns failed or canceled
+  tasks; it raises `TaskTimeoutError` (a `TimeoutError`) when `timeout` expires.
+- `cancel_crawl(id)` refunds a queued crawl; a running one stops at its next checkpoint
+  (`status="canceling"`) and is charged for the pages read.
+- Pass `webhook_url=` to get a signed `crawl.completed` delivery instead of polling. A result over
+  4 MB arrives as `result=None` with `result_omitted=True`; fetch it with `get_crawl`.
+
+## Monitors
+
+```python
+mon = sk.monitors.create(
+    "ai agents",
+    endpoint="news",
+    interval="hourly",  # hourly | daily | weekly, or interval_seconds=3600…2592000
+    webhook_url="https://example.com/hooks/serpkite",  # optional
+)
+sk.monitors.run(mon.id)  # due within ~30 s
+sk.monitors.update(mon.id, active=False)
+sk.monitors.update(mon.id, q="ai agent frameworks", num=20)  # change the saved search
+
+# Run history, newest first (new results kept 24 h): one page, or every run
+page = sk.monitors.runs(mon.id, limit=20)  # page.next_before → before=
+for run in sk.monitors.iter_runs(mon.id):
+    print(run.status, run.new_results)
+
+# Watch a page for content changes (1 credit per check); metadata is echoed in webhooks
+watch = sk.monitors.create(endpoint="webpage", url="https://example.com/pricing", metadata={"customer": "acme"})
+sk.monitors.update(watch.id, metadata=None)  # clears it; leave it out to keep it
+sk.monitors.delete(watch.id)
+```
+
+Each search run costs what its search costs (1 credit per 10 results, `num` 100 is 7; empty and failed runs are free) and reports only results
+it hasn't seen before (among the top `num`). Without a `webhook_url`, read new results from
+`monitors.runs`. A monitor pauses itself after 10 failed runs in a row; `update(id, active=True)`
+resumes it. `webhook_url=""` removes the webhook; a changed search reports every result as new once.
+
 ## Batches
 
 Batches run at half price. You queue 1-100 requests for one endpoint, then poll for the results
@@ -212,14 +302,25 @@ Pass `idempotency_key=` (e.g. a UUID you store with the batch) to make `create` 
 24 hours the server replays the first response for the same key and body, so the client then also
 retries 5xx and connection errors.
 
-Webhook deliveries are always signed. Check one with the raw body:
+Webhook deliveries (`batch.completed`, `crawl.completed`, `monitor.results`) are always signed.
+Check one with the raw body, then parse it into a typed event:
 
 ```python
-from serpkite import verify_webhook
+from serpkite import parse_webhook, verify_webhook
+from serpkite.types import MonitorResultsEvent, TaskCompletedEvent
 
-if not verify_webhook(os.environ["SERPKITE_WEBHOOK_SECRET"], request.get_data(), request.headers):
+body = request.get_data()
+if not verify_webhook(os.environ["SERPKITE_WEBHOOK_SECRET"], body, request.headers):
     abort(401)
+event = parse_webhook(body, request.headers)
+if isinstance(event, MonitorResultsEvent):  # dedupe retries on event.run_id
+    print(event.name, len(event.new_results))
+elif isinstance(event, TaskCompletedEvent):  # crawl.completed
+    print(event.status, event.poll_url)
 ```
+
+Or in one step: `parse_webhook(body, request.headers, secret=...)` verifies first and raises
+`WebhookSignatureError` on a bad signature or a stale timestamp.
 
 ## CrewAI
 

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SerpKite SERP API
-  version: 1.0.3
+  version: 1.5.1
   description: |
     Public search API (api.serpkite.com). Google results as clean JSON or Markdown
     for AI agents, plus a Google Custom Search–compatible endpoint. Official SDKs:
@@ -102,6 +102,12 @@ paths:
         - { name: ads, in: query, schema: { type: boolean } }
         - { name: max_age, in: query, schema: { type: integer } }
         - { name: engine, in: query, schema: { type: string }, description: "google (default), auto, consensus, one provider, or a comma-separated list (e.g. google,brave)" }
+        - { name: include_domains, in: query, schema: { type: string }, description: "Comma-separated domains, or the key repeated (see SearchRequest.include_domains)" }
+        - { name: exclude_domains, in: query, schema: { type: string }, description: "Comma-separated domains, or the key repeated" }
+        - { name: boost_domains, in: query, schema: { type: string }, description: "Comma-separated domains, or the key repeated" }
+        - { name: start_date, in: query, schema: { type: string, format: date } }
+        - { name: end_date, in: query, schema: { type: string, format: date } }
+        - { name: highlights, in: query, schema: { type: boolean }, description: Needs include_content }
         - { name: api_key, in: query, schema: { type: string } }
       responses:
         "200": { $ref: "#/components/responses/SearchOK" }
@@ -247,7 +253,7 @@ paths:
         "503": { $ref: "#/components/responses/Unavailable" }
   /v1/webpage:
     post:
-      summary: Fetch any public URL and return clean Markdown + metadata (1 credit)
+      summary: Fetch any public URL (HTML or PDF) and return clean Markdown + metadata (1 credit)
       operationId: webpage
       requestBody:
         required: true
@@ -262,6 +268,238 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Unavailable" }
+  /v1/extract:
+    post:
+      summary: Up to 20 URLs (HTML or PDF) as Markdown, text or HTML, with query-ranked highlights, links and images (1 credit per URL read)
+      operationId: extract
+      description: |
+        Every URL is billed only when it comes back: 1 credit, 0.5 from cache. URLs that
+        fail are listed in `failed` and cost nothing. The response is `200` even when every
+        URL failed. Highlights are ranked with BM25 (lexical, no model).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ExtractRequest" }
+            example: { urls: ["https://example.com/pricing", "https://example.com/docs/limits.pdf"], query: "enterprise price", highlights: 2 }
+      responses:
+        "200": { $ref: "#/components/responses/ExtractOK" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "402": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /v1/map:
+    post:
+      summary: The URLs of a site, from robots.txt sitemaps and the start page's links, optionally ranked by a search (1 credit; free when nothing is found)
+      operationId: map
+      description: |
+        Reads the sitemaps listed in robots.txt (or `/sitemap.xml`), following sitemap
+        indexes; XML, gzip, RSS/Atom and plain-text sitemaps are understood. URLs are
+        cleaned (fragment and tracking parameters such as `utm_*`, `gclid` and `fbclid`
+        dropped), kept on the site, filtered by `include_paths` / `exclude_paths` and
+        de-duplicated (`www.`, scheme and trailing slash folded). `search` ranks the URLs
+        by their path words and titles (BM25) and drops the ones that don't match. Takes
+        at most about 30 seconds.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MapRequest" }
+            example: { url: "https://docs.example.com/", search: "install guide", limit: 50 }
+      responses:
+        "200": { $ref: "#/components/responses/MapOK" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "402": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /v1/crawl:
+    post:
+      summary: Start an async crawl of one site (1 credit per page read; `limit` credits reserved up front, the rest refunded)
+      operationId: createCrawl
+      description: |
+        From `url` and (unless `sitemap: skip`) the site's sitemaps, same host (optionally
+        subdomains), up to `limit` pages and `max_depth` link hops, filtered by
+        `include_paths` / `exclude_paths` (regular expressions matched against the URL
+        path). Breadth first, or best first with `query` (pages whose URL and link text
+        match it are read first). Each host's robots.txt is honoured (RFC 9309: rules,
+        `Crawl-delay`; a robots.txt that answers 5xx stops the crawl at the start page).
+        URLs are canonicalised (fragments and tracking parameters dropped, `www.`,
+        trailing slashes and redirects folded) so each page is read once. Each page comes
+        back as Markdown (or text) with its metadata. A crawl runs for at most 30 minutes
+        and returns up to 16 MB of pages; `result.stats.stopped` says why it ended.
+
+        Returns `202` with a task; poll `GET /v1/crawl/{id}` or wait for the signed
+        `crawl.completed` webhook. Pages read cost 1 credit each (0.5 from cache); a crawl
+        that read nothing fails (`no_pages`) and is refunded. At most 20 crawls per account
+        may be queued or running at once (`429`); a crawl interrupted by a deploy restarts
+        from the beginning.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CrawlRequest" }
+            example: { url: "https://docs.example.com/", limit: 50, max_depth: 2, include_paths: ["^/guides/"] }
+      responses:
+        "202": { $ref: "#/components/responses/TaskAccepted" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "402": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /v1/crawl/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: Poll a crawl (kept for 24 hours)
+      operationId: getCrawl
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CrawlTask" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+    delete:
+      summary: Cancel a crawl. A queued crawl is canceled and refunded at once; a running one stops at its next checkpoint and is charged for the pages read
+      description: "`404` when there is no such crawl, `409` when it already finished."
+      operationId: cancelCrawl
+      responses:
+        "200": { $ref: "#/components/responses/TaskCanceled" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /v1/monitors:
+    post:
+      summary: Create a monitor — a saved /v1/search or /v1/news request (new results) or a /v1/webpage URL (content changes) that runs on a schedule and reports what is new (signed webhook and run history)
+      operationId: createMonitor
+      description: |
+        Runs hourly to monthly (`interval` or `interval_seconds`, default daily); the
+        first run is due right away (unless `active: false`). With `endpoint: webpage`
+        the monitor watches `url` and reports the page (Markdown, `change: new|changed`)
+        whenever its content changes (1 credit per check). Each run is billed like the
+        search it makes (1 credit per 10 results, `num: 100` is 7; empty and failed runs
+        are free) on the monitor's key: the key that created it, or last changed or ran
+        it, under that key's limits and the account's spend cap. Only the fields below
+        are kept; any other search field is a `400`. Results among the
+        top `num` not seen in earlier runs are POSTed as a `monitor.results` webhook when
+        the monitor has a `webhook_url`, and are always listed in its run history
+        (`GET /v1/monitors/{id}/runs`, results kept 24 hours). At most 100 monitors per
+        account (403 `forbidden`). A monitor pauses itself after 10 failed runs in a row
+        (search errors, insufficient credits or webhook failures) or when its key is
+        revoked; set `active: true` to resume.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MonitorCreateRequest" }
+            example: { q: "ai agents", endpoint: news, interval: hourly, name: "agents news", webhook_url: "https://example.com/hooks/serpkite" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Monitor" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+    get:
+      summary: List the account's monitors
+      operationId: listMonitors
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MonitorList" }
+        "401": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /v1/monitors/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: Get a monitor
+      operationId: getMonitor
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Monitor" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+    patch:
+      summary: "Update a monitor: name, interval, webhook_url (empty string removes it), active, and the saved search (endpoint, q and search options; a changed search starts a new baseline)"
+      operationId: updateMonitor
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MonitorUpdateRequest" }
+            example: { active: false, interval: daily }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Monitor" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+    delete:
+      summary: Delete a monitor
+      operationId: deleteMonitor
+      responses:
+        "204": { description: Deleted }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /v1/monitors/{id}/runs:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      - { name: before, in: query, description: "`next_before` of the previous page", schema: { type: string, format: uuid } }
+    get:
+      summary: A monitor's run history, newest first (runs are kept 30 days, their results 24 hours)
+      operationId: listMonitorRuns
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MonitorRunList" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /v1/monitors/{id}/run:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Run a monitor now (it becomes due at the next scheduler poll, within about 30 seconds)
+      description: The monitor is bound to the calling key, which this and later runs are billed to.
+      operationId: runMonitor
+      responses:
+        "202":
+          description: Scheduled
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Monitor" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
   /customsearch/v1:
     get:
       summary: Google Custom Search JSON API–compatible endpoint (for apps moving off CSE)
@@ -455,6 +693,41 @@ paths:
         "202": { description: Notification accepted }
         "401": { $ref: "#/components/responses/Error" }
 
+webhooks:
+  crawl.completed:
+    post:
+      operationId: crawlCompletedWebhook
+      summary: A crawl finished (completed, failed or canceled)
+      description: |
+        Sent to the crawl's `webhook_url` (or the account webhook). Signed like batch
+        webhooks: `X-SerpKite-Event: crawl.completed`, `X-SerpKite-Delivery` (the task id),
+        `X-SerpKite-Timestamp` and `X-SerpKite-Signature: v1=<hex HMAC-SHA256(secret,
+        "<timestamp>.<raw body>")>`. Retried with backoff until a 2xx.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TaskCompletedEvent" }
+      responses:
+        "200": { description: Any 2xx acknowledges the delivery }
+  monitor.results:
+    post:
+      operationId: monitorResultsWebhook
+      summary: A monitor run found results it had not seen before
+      description: |
+        Sent to the monitor's `webhook_url` (when it has one) only when a run finds new results (the first
+        run sends everything it found, with `first_run: true`). Same signature headers as
+        the other webhooks, with `X-SerpKite-Event: monitor.results` and
+        `X-SerpKite-Delivery: <run id>`. Tried up to 3 times per run; results that could
+        not be delivered stay new for the next run (and are in the run history either way).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MonitorResultsEvent" }
+      responses:
+        "200": { description: Any 2xx acknowledges the delivery }
+
 components:
   securitySchemes:
     bearer: { type: http, scheme: bearer }
@@ -495,6 +768,21 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
+    TaskAccepted:
+      description: Queued. Poll `poll_url` or wait for the webhook
+      headers:
+        X-Credits-Reserved: { description: "The maximum price, reserved until the task ends", schema: { type: number } }
+        X-Credits-Remaining: { $ref: "#/components/headers/CreditsRemaining" }
+        Location: { description: "Path of the task (`/v1/{kind}/{id}`)", schema: { type: string } }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/TaskCreated" }
+          example: { id: "01926a3e-7b2c-7c4e-9f1a-2b3c4d5e6f70", kind: crawl, status: queued, created_at: "2026-10-03T12:00:00Z", poll_url: "https://api.serpkite.com/v1/crawl/01926a3e-7b2c-7c4e-9f1a-2b3c4d5e6f70", credits_reserved: 50, webhook_url: null }
+    TaskCanceled:
+      description: "`canceled` (it was queued: refunded at once) or `canceling` (it is running and stops at its next checkpoint)"
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/TaskCancelResponse" }
     SearchOK:
       description: OK (text/markdown when format=markdown)
       headers: &billingHeaders
@@ -581,6 +869,37 @@ components:
           schema: { $ref: "#/components/schemas/AutocompleteResponse" }
         text/markdown:
           schema: { type: string }
+    ExtractOK:
+      description: OK
+      headers: *billingHeaders
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ExtractResponse" }
+          example:
+            request: { endpoint: extract, urls: ["https://example.com/pricing", "https://example.com/missing"], format: markdown, query: "enterprise price" }
+            results:
+              - url: "https://example.com/pricing"
+                status_code: 200
+                title: Pricing
+                metadata: { title: Pricing, content_type: text/html }
+                cached: false
+                markdown: "# Pricing\n\n…"
+                highlights: [{ text: "Enterprise: $499 per month …", score: 4.83, heading: "Plans" }]
+            failed:
+              - { url: "https://example.com/missing", error: { code: upstream_error, message: "could not fetch the page: the site answered 404; you were not charged" } }
+            meta: { request_id: req_01J9, credits_used: 1, latency_ms: 2210, succeeded: 1, failed: 1 }
+    MapOK:
+      description: OK
+      headers: *billingHeaders
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/MapResponse" }
+          example:
+            request: { endpoint: map, url: "https://docs.example.com/", limit: 50, sitemap: include, include_subdomains: false, search: "install guide" }
+            results:
+              - { url: "https://docs.example.com/install", lastmod: "2026-09-01", source: sitemap }
+              - { url: "https://docs.example.com/guide", title: Guide, source: page }
+            meta: { request_id: req_01J9, credits_used: 1, latency_ms: 840, count: 2 }
     WebpageOK:
       description: OK (text/markdown when format=markdown)
       headers: *billingHeaders
@@ -629,6 +948,39 @@ components:
         ads: { type: boolean, default: false, description: Include sponsored results }
         max_age: { type: integer, minimum: 0, description: Accept a cached result up to this many seconds old (50% of credits on a hit) }
         engine: { $ref: "#/components/schemas/EngineParam" }
+        include_domains:
+          $ref: "#/components/schemas/DomainList"
+          description: "Only results from these domains (search, news, images, videos). Compiled into site: operators and enforced on the results. Not with engine=consensus"
+        exclude_domains:
+          $ref: "#/components/schemas/DomainList"
+          description: "Drop results from these domains (search, news, images, videos). Not with engine=consensus"
+        boost_domains:
+          $ref: "#/components/schemas/DomainList"
+          description: Move results from these domains to the top, keeping the order within both groups (search, news)
+        start_date: { type: string, format: date, description: "Only results published on or after this date, YYYY-MM-DD (search, news, images, videos). Can't be combined with time or tbs. A fallback engine without date ranges is skipped" }
+        end_date: { type: string, format: date, description: "Only results published on or before this date, YYYY-MM-DD. Can't be combined with time or tbs" }
+        highlights: { type: boolean, default: false, description: "Return up to 3 query-ranked passages (`highlights`) of each page read by include_content instead of the whole page (search only; needs include_content; no extra credits)" }
+
+    DomainList:
+      description: >-
+        Domains as an array or a comma-separated string, at most 20: a host (`example.com`, subdomains
+        match), a host with a path prefix (`github.com/org`) or a TLD (`.gov`).
+      oneOf:
+        - type: string
+          examples: ["github.com,en.wikipedia.org"]
+        - type: array
+          maxItems: 20
+          items: { type: string }
+          examples: [["github.com/serpkite", ".gov"]]
+
+    Highlight:
+      type: object
+      description: A query-relevant passage of a page, verbatim
+      required: [text, score]
+      properties:
+        text: { type: string }
+        score: { type: number, description: Relevance to the query (BM25; higher is better, comparable within one response) }
+        heading: { type: string, description: The section heading path the passage sits under }
 
     ReviewsRequest:
       type: object
@@ -654,10 +1006,252 @@ components:
       type: object
       required: [url]
       properties:
-        url: { type: string, format: uri }
+        url: { type: string, format: uri, description: An HTML page or a PDF }
         format: { type: string, enum: [json, markdown, compact], default: json }
         include_html: { type: boolean, default: false }
+        include_links: { type: boolean, default: false, description: "Also return the page's outbound links (`links`)" }
+        include_images: { type: boolean, default: false, description: "Also return the page's image URLs (`image_links`)" }
+        country: { type: string, description: "Fetch through an exit in this country (ISO 3166-1 alpha-2) for geo-dependent pages" }
         max_age: { type: integer }
+
+    ExtractRequest:
+      type: object
+      required: [urls]
+      properties:
+        urls: { type: array, items: { type: string, format: uri }, minItems: 1, maxItems: 20, description: "HTML pages or PDFs (duplicates are dropped)" }
+        format: { type: string, enum: [markdown, text, html], default: markdown }
+        query: { type: string, maxLength: 4096, description: What highlights are ranked against }
+        highlights: { type: integer, minimum: 0, maximum: 10, default: 0, description: "Query-ranked passages per page (BM25; needs query)" }
+        max_tokens: { type: integer, minimum: 100, maximum: 100000, description: Trim each page's markdown or text to about this many tokens }
+        include_links: { type: boolean, default: false }
+        include_images: { type: boolean, default: false }
+        max_age: { type: integer, minimum: 0, maximum: 2592000, description: Accept a cached page up to this many seconds old (0.5 credit) }
+        country: { type: string, description: Fetch through an exit in this country (ISO 3166-1 alpha-2) }
+        timeout: { type: integer, minimum: 1, maximum: 90, default: 50, description: "Seconds to wait for the pages; a page still loading is listed in `failed` (`upstream_timeout`, not charged)" }
+
+    ExtractResult:
+      type: object
+      required: [url, cached]
+      properties:
+        url: { type: string, description: Final URL after redirects }
+        status_code: { type: integer }
+        title: { type: string }
+        published_at: { type: string, description: "The page's published time as ISO 8601, when it has one" }
+        metadata: { $ref: "#/components/schemas/PageMetadata" }
+        cached: { type: boolean }
+        markdown: { type: string, description: format=markdown }
+        text: { type: string, description: format=text }
+        html: { type: [string, "null"], description: "format=html (null for a PDF); at most 2 MiB per page" }
+        links: { type: array, items: { $ref: "#/components/schemas/PageLink" }, description: include_links=true only }
+        images: { type: array, items: { type: string }, description: include_images=true only }
+        highlights: { type: array, items: { $ref: "#/components/schemas/Highlight" }, description: highlights > 0 only }
+
+    ExtractFailure:
+      type: object
+      required: [url, error]
+      properties:
+        url: { type: string }
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string, examples: [invalid_request, upstream_error, upstream_timeout, empty_page] }
+            message: { type: string }
+
+    ExtractResponse:
+      type: object
+      required: [request, results, failed, meta]
+      properties:
+        request:
+          type: object
+          additionalProperties: true
+          properties:
+            endpoint: { type: string, const: extract }
+            urls: { type: array, items: { type: string } }
+            format: { type: string }
+            query: { type: string }
+        results: { type: array, items: { $ref: "#/components/schemas/ExtractResult" } }
+        failed: { type: array, items: { $ref: "#/components/schemas/ExtractFailure" } }
+        meta:
+          type: object
+          required: [request_id, credits_used, succeeded, failed]
+          properties:
+            request_id: { type: string }
+            credits_used: { type: number }
+            latency_ms: { type: integer }
+            succeeded: { type: integer }
+            failed: { type: integer }
+
+    CrawlRequest:
+      type: object
+      required: [url]
+      properties:
+        url: { type: string, format: uri, description: "Start page (always read: path filters and robots.txt apply to the pages found from it)" }
+        limit: { type: integer, minimum: 1, maximum: 1000, default: 25, description: Maximum pages read (and credits reserved) }
+        max_depth: { type: integer, minimum: 0, maximum: 10, default: 2, description: "Link hops from url (sitemap pages count as 1 hop; 0 reads only url)" }
+        include_paths: { type: array, items: { type: string }, maxItems: 20, description: Regular expressions matched against the URL path; follow only paths matching one }
+        exclude_paths: { type: array, items: { type: string }, maxItems: 20, description: Regular expressions matched against the URL path; never follow paths matching one }
+        include_subdomains: { type: boolean, default: false }
+        sitemap:
+          type: string
+          enum: [include, only, skip]
+          default: include
+          description: "`include` also seeds the crawl with the site's sitemap URLs (after the start page's links), `only` reads the start page and sitemap URLs without following links, `skip` follows links only"
+        query: { type: string, maxLength: 512, description: "Read the pages most relevant to these words first (best-first crawl)" }
+        ignore_query_parameters: { type: boolean, default: false, description: Treat URLs that differ only in their query string as one page }
+        format: { type: string, enum: [markdown, text], default: markdown }
+        include_links: { type: boolean, default: false, description: Return each page's outbound links }
+        max_tokens: { type: integer, minimum: 100, maximum: 100000, description: Trim each page to this many tokens }
+        max_age: { type: integer, minimum: 0, maximum: 2592000, description: Accept cached pages up to this many seconds old (0.5 credit each) }
+        webhook_url: { type: string, format: uri, description: "Receives the signed `crawl.completed` event. Defaults to the account webhook" }
+
+    TaskStatus:
+      type: string
+      enum: [queued, running, completed, failed, canceled]
+
+    TaskCreated:
+      type: object
+      required: [id, kind, status, created_at, poll_url, credits_reserved]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, enum: [crawl] }
+        status: { $ref: "#/components/schemas/TaskStatus" }
+        created_at: { type: string, format: date-time }
+        poll_url: { type: string }
+        credits_reserved: { type: number }
+        webhook_url: { type: [string, "null"] }
+
+    TaskCancelResponse:
+      type: object
+      required: [id, status]
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [canceled, canceling] }
+
+    TaskError:
+      type: [object, "null"]
+      description: Set when the task failed or was canceled
+      properties:
+        code: { type: string, examples: [no_pages, canceled, timeout, internal] }
+        message: { type: string }
+
+    CrawlPage:
+      type: object
+      required: [url, depth]
+      properties:
+        url: { type: string }
+        depth: { type: integer, description: Link hops from the start page }
+        title: { type: string }
+        markdown: { type: string }
+        text: { type: string }
+        published_at: { type: string }
+        metadata: { $ref: "#/components/schemas/PageMetadata" }
+        links: { type: array, items: { $ref: "#/components/schemas/PageLink" } }
+
+    CrawlResult:
+      type: object
+      required: [url, pages, failed, stats]
+      properties:
+        url: { type: string }
+        pages: { type: array, items: { $ref: "#/components/schemas/CrawlPage" } }
+        failed: { type: array, items: { $ref: "#/components/schemas/ExtractFailure" } }
+        stats:
+          type: object
+          properties:
+            pages: { type: integer }
+            failed: { type: integer }
+            seconds: { type: integer }
+            discovered: { type: integer, description: Unique URLs found that passed the filters }
+            queued: { type: integer, description: Found but not read when the crawl ended }
+            duplicates: { type: integer, description: Pages that redirected to a page already read (not charged) }
+            sitemap_urls: { type: integer, description: URLs taken from sitemaps }
+            robots: { type: string, enum: [found, missing, unreachable, none], description: "The start host's robots.txt" }
+            robots_disallowed: { type: integer, description: Disallow rules in force on the start host }
+            robots_blocked: { type: integer, description: URLs skipped because robots.txt disallows them }
+            crawl_delay_ms: { type: integer, description: "The start host's Crawl-delay, honoured" }
+            stopped: { type: string, enum: [done, limit, time_limit, size_limit, too_many_failures, canceled], description: Why the crawl ended }
+
+    CrawlTask:
+      type: object
+      required: [id, kind, status, created_at, credits_reserved, credits_used]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, const: crawl }
+        status: { $ref: "#/components/schemas/TaskStatus" }
+        created_at: { type: string, format: date-time }
+        started_at: { type: [string, "null"], format: date-time }
+        completed_at: { type: [string, "null"], format: date-time }
+        credits_reserved: { type: number }
+        credits_used: { type: number }
+        webhook_status: { type: [string, "null"], enum: [pending, delivered, failed, null] }
+        progress:
+          type: [object, "null"]
+          additionalProperties: true
+          properties:
+            pages_done: { type: integer }
+            pages_failed: { type: integer }
+            pages_queued: { type: integer }
+            pages_discovered: { type: integer }
+            limit: { type: integer }
+        result:
+          description: Set once the crawl ends (also on cancel, with the pages read so far)
+          anyOf:
+            - $ref: "#/components/schemas/CrawlResult"
+            - type: "null"
+        error: { $ref: "#/components/schemas/TaskError" }
+
+    MapRequest:
+      type: object
+      required: [url]
+      properties:
+        url: { type: string, format: uri, description: The site (any page of it; sitemaps are read from its origin) }
+        search: { type: string, maxLength: 512, description: "Keep only URLs relevant to these words, most relevant first" }
+        limit: { type: integer, minimum: 1, maximum: 5000, default: 100 }
+        include_subdomains: { type: boolean, default: false }
+        include_paths: { type: array, items: { type: string }, maxItems: 20, description: "Regular expressions matched against the URL path; keep only URLs matching one" }
+        exclude_paths: { type: array, items: { type: string }, maxItems: 20, description: Regular expressions matched against the URL path; drop URLs matching one }
+        ignore_query_parameters: { type: boolean, default: false, description: "Treat URLs that differ only in their query string as one (the first one found is kept)" }
+        sitemap:
+          type: string
+          enum: [include, only, skip]
+          default: include
+          description: "`include` sitemaps and the start page's links, `only` sitemaps, `skip` sitemaps (links only)"
+
+    MapURL:
+      type: object
+      required: [url, source]
+      properties:
+        url: { type: string }
+        title: { type: string }
+        lastmod: { type: string, description: "The sitemap's lastmod, as written" }
+        source: { type: string, enum: [sitemap, page] }
+
+    MapResponse:
+      type: object
+      required: [request, results, meta]
+      properties:
+        request:
+          type: object
+          additionalProperties: true
+          properties:
+            endpoint: { type: string, const: map }
+            url: { type: string }
+            search: { type: string }
+            limit: { type: integer }
+            sitemap: { type: string }
+            include_subdomains: { type: boolean }
+            include_paths: { type: array, items: { type: string } }
+            exclude_paths: { type: array, items: { type: string } }
+            ignore_query_parameters: { type: boolean }
+        results: { type: array, items: { $ref: "#/components/schemas/MapURL" } }
+        meta:
+          type: object
+          required: [request_id, credits_used, count]
+          properties:
+            request_id: { type: string }
+            credits_used: { type: number }
+            latency_ms: { type: integer }
+            count: { type: integer }
 
     Provider:
       type: string
@@ -737,6 +1331,8 @@ components:
         device: { type: string }
         autocorrect: { type: boolean }
         tbs: { type: string }
+        start_date: { type: string, format: date }
+        end_date: { type: string, format: date }
         safe: { type: string }
         place_id: { type: string }
         cid: { type: string }
@@ -744,6 +1340,10 @@ components:
         sort: { type: string }
         include_content: { type: integer }
         format: { type: string }
+        include_domains: { type: array, items: { type: string } }
+        exclude_domains: { type: array, items: { type: string } }
+        boost_domains: { type: array, items: { type: string } }
+        highlights: { type: boolean }
 
     Sitelink:
       type: object
@@ -768,7 +1368,12 @@ components:
         attributes: { type: object, additionalProperties: { type: string } }
         rating: { type: number }
         rating_count: { type: integer }
+        published_at: { type: string, description: "`date` as an ISO 8601 date or date-time when it parses (relative dates resolved against the fetch time)", examples: ["2026-09-30", "2026-10-03T09:00:00Z"] }
         content: { type: string, description: Page Markdown when include_content covered this result }
+        highlights:
+          type: array
+          description: highlights=true only. Query-ranked passages of the fetched page, best first (instead of content)
+          items: { $ref: "#/components/schemas/Highlight" }
         sources:
           type: array
           description: engine=consensus only. The providers that returned this result, in route order; results are ranked by how many there are
@@ -861,6 +1466,7 @@ components:
         source: { type: string }
         channel: { type: string }
         date: { type: string }
+        published_at: { type: string, description: "`date` as ISO 8601 when it parses" }
     VideosResponse:
       type: object
       required: [request, results, meta]
@@ -879,6 +1485,7 @@ components:
         domain: { type: string }
         snippet: { type: string }
         date: { type: string }
+        published_at: { type: string, description: "`date` as ISO 8601 when it parses" }
         source: { type: string }
         image_url: { type: string }
     NewsResponse:
@@ -1039,6 +1646,14 @@ components:
         image: { type: string }
         published_time: { type: string }
         author: { type: string }
+        content_type: { type: string, description: The page's media type, examples: [text/html, application/pdf] }
+        pages: { type: integer, description: Page count of a PDF }
+    PageLink:
+      type: object
+      required: [url]
+      properties:
+        url: { type: string, description: Absolute URL }
+        text: { type: string, description: Anchor text }
     WebpageResponse:
       type: object
       required: [request, url, markdown, metadata, meta]
@@ -1050,6 +1665,8 @@ components:
         text: { type: string }
         html: { type: string, description: Only with include_html=true }
         metadata: { $ref: "#/components/schemas/PageMetadata" }
+        links: { type: array, items: { $ref: "#/components/schemas/PageLink" }, description: "include_links=true only. Outbound links in document order, deduplicated" }
+        image_links: { type: array, items: { type: string }, description: include_images=true only. Image URLs in document order }
         meta: { $ref: "#/components/schemas/Meta" }
 
     CSEResponse:
@@ -1190,3 +1807,173 @@ components:
           properties:
             credits: { type: number }
             requests: { type: integer }
+
+    TaskCompletedEvent:
+      type: object
+      description: "Body of `crawl.completed`"
+      required: [event, id, kind, status, created_at, credits_used]
+      properties:
+        event: { type: string, const: crawl.completed }
+        id: { type: string, format: uuid }
+        kind: { type: string, const: crawl }
+        status: { $ref: "#/components/schemas/TaskStatus" }
+        created_at: { type: string, format: date-time }
+        completed_at: { type: [string, "null"], format: date-time }
+        credits_used: { type: number }
+        poll_url: { type: string, description: Where the task (and its full result) can be fetched for 24 hours }
+        result: { description: "The CrawlResult (null when the crawl failed without one, or when it is larger than 4 MB: see result_omitted)" }
+        result_omitted: { type: boolean, description: "Set when the result was too large for the webhook; GET poll_url for it" }
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+
+    MonitorSearch:
+      type: object
+      description: "The saved request a monitor reruns: a search (q and options) or, for webpage monitors, url (and country)"
+      properties:
+        q: { type: string }
+        url: { type: string }
+        country: { type: string }
+        language: { type: string }
+        location: { type: string }
+        time: { type: string, enum: [hour, day, week, month, year] }
+        num: { type: integer }
+        device: { type: string }
+        safe: { type: string }
+        include_domains: { type: array, items: { type: string } }
+        exclude_domains: { type: array, items: { type: string } }
+        engine: { type: array, items: { type: string } }
+
+    MonitorCreateRequest:
+      type: object
+      description: "Search and news monitors need `q`; webpage monitors need `url` and take only `country` besides"
+      properties:
+        q: { type: string, minLength: 1, maxLength: 2048 }
+        url: { type: string, format: uri, description: "endpoint=webpage: the page to watch for content changes" }
+        endpoint: { type: string, enum: [search, news, webpage], default: search }
+        metadata: { type: object, additionalProperties: true, description: "Your own JSON object (at most 2 KB), echoed on the monitor and in its webhooks" }
+        name: { type: string, maxLength: 200 }
+        interval: { type: string, enum: [hourly, daily, weekly], default: daily }
+        interval_seconds: { type: integer, minimum: 3600, maximum: 2592000, description: Overrides interval }
+        webhook_url: { type: string, format: uri, description: "Receives signed `monitor.results` events. Without one, read new results from the run history" }
+        active: { type: boolean, default: true, description: "false creates the monitor paused" }
+        country: { type: string }
+        language: { type: string }
+        location: { type: string }
+        time: { type: string, enum: [hour, day, week, month, year] }
+        num: { type: integer, minimum: 1, maximum: 100 }
+        device: { type: string, enum: [desktop, mobile] }
+        safe: { type: string, enum: [active, off] }
+        include_domains: { $ref: "#/components/schemas/DomainList" }
+        exclude_domains: { $ref: "#/components/schemas/DomainList" }
+        engine: { $ref: "#/components/schemas/EngineParam" }
+
+    MonitorUpdateRequest:
+      type: object
+      description: Only the fields sent change. Search fields are merged into the saved search; a changed search (or endpoint) makes the next run report every result as new.
+      properties:
+        name: { type: string, maxLength: 200 }
+        interval: { type: string, enum: [hourly, daily, weekly] }
+        interval_seconds: { type: integer, minimum: 3600, maximum: 2592000 }
+        webhook_url: { type: string, description: "A webhook URL, or an empty string to remove it" }
+        active: { type: boolean, description: "true resumes a paused monitor (due now, failure streak cleared)" }
+        metadata: { type: [object, "null"], additionalProperties: true, description: Replaces the metadata (null clears it) }
+        endpoint: { type: string, enum: [search, news, webpage], description: "Switching between a search and a page drops the other kind's fields" }
+        q: { type: string, minLength: 1, maxLength: 2048 }
+        url: { type: string, format: uri, description: endpoint=webpage only }
+        country: { type: string }
+        language: { type: string }
+        location: { type: string }
+        time: { type: string, enum: [hour, day, week, month, year] }
+        num: { type: integer, minimum: 1, maximum: 100 }
+        device: { type: string, enum: [desktop, mobile] }
+        safe: { type: string, enum: [active, off] }
+        include_domains: { $ref: "#/components/schemas/DomainList" }
+        exclude_domains: { $ref: "#/components/schemas/DomainList" }
+        engine: { $ref: "#/components/schemas/EngineParam" }
+
+    Monitor:
+      type: object
+      required: [id, name, endpoint, request, interval_seconds, webhook_url, active, next_run_at, runs, consecutive_failures, credits_used, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        endpoint: { type: string, enum: [search, news, webpage] }
+        request: { $ref: "#/components/schemas/MonitorSearch" }
+        metadata: { type: [object, "null"], additionalProperties: true }
+        interval_seconds: { type: integer }
+        webhook_url: { type: [string, "null"], description: Null when new results are only kept in the run history }
+        active: { type: boolean }
+        next_run_at: { type: string, format: date-time }
+        last_run_at: { type: [string, "null"], format: date-time }
+        last_status: { type: [string, "null"], enum: [ok, error, webhook_failed, paused, null] }
+        last_error: { type: [string, "null"] }
+        last_new_results: { type: integer, description: New results found by the last run }
+        runs: { type: integer }
+        consecutive_failures: { type: integer, description: Failed runs in a row; the monitor pauses itself at 10 }
+        credits_used: { type: number, description: Total over all runs }
+        created_at: { type: string, format: date-time }
+
+    MonitorRun:
+      type: object
+      required: [id, status, new_results, credits_used, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [ok, error, webhook_failed, paused] }
+        error: { type: [string, "null"] }
+        new_results: { type: integer }
+        results:
+          type: [array, "null"]
+          description: The new results (OrganicResult-shaped for search, NewsResult for news, MonitorPageChange for webpage); null when there were none or after 24 hours
+          items: { type: object, additionalProperties: true }
+        credits_used: { type: number }
+        webhook_status: { type: [string, "null"], enum: [delivered, failed, none, null], description: "none = the monitor has no webhook; null = nothing to send" }
+        created_at: { type: string, format: date-time }
+
+    MonitorPageChange:
+      type: object
+      description: What a webpage monitor reports when the page is new to it or its content changed
+      required: [url, change, content_hash, markdown]
+      properties:
+        url: { type: string, description: Final URL after redirects }
+        title: { type: string }
+        change: { type: string, enum: [new, changed] }
+        content_hash: { type: string, description: Fingerprint of the content (whitespace-insensitive) }
+        markdown: { type: string, description: The page's Markdown (up to about 8,000 tokens) }
+        published_at: { type: string }
+
+    MonitorRunList:
+      type: object
+      required: [results, next_before]
+      properties:
+        results: { type: array, items: { $ref: "#/components/schemas/MonitorRun" } }
+        next_before: { type: [string, "null"], format: uuid, description: Pass as `before` for the next page; null on the last page }
+
+    MonitorList:
+      type: object
+      required: [results]
+      properties:
+        results: { type: array, items: { $ref: "#/components/schemas/Monitor" } }
+
+    MonitorResultsEvent:
+      type: object
+      description: "Body of `monitor.results`"
+      required: [event, monitor_id, run_id, name, endpoint, q, first_run, run_at, new_results, credits_used]
+      properties:
+        event: { type: string, const: monitor.results }
+        monitor_id: { type: string, format: uuid }
+        run_id: { type: string, format: uuid, description: Also the X-SerpKite-Delivery header; use it to deduplicate retries }
+        name: { type: string }
+        endpoint: { type: string, enum: [search, news, webpage] }
+        q: { type: string, description: The saved query (empty for webpage monitors) }
+        url: { type: string, description: webpage monitors only }
+        metadata: { type: [object, "null"], additionalProperties: true, description: The monitor's metadata }
+        first_run: { type: boolean, description: The first run since the monitor was created or its search changed }
+        run_at: { type: string, format: date-time }
+        new_results:
+          type: array
+          description: Results not seen in earlier runs (OrganicResult-shaped for search, NewsResult for news, MonitorPageChange for webpage)
+          items: { type: object, additionalProperties: true }
+        credits_used: { type: number, description: This run's price }

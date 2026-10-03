@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 import email.utils
 import os
 import platform
@@ -30,6 +31,9 @@ MAX_RETRY_AFTER = 60.0
 RETRY_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
 # 429s that won't clear by waiting a few seconds.
 NON_RETRYABLE_CODES = frozenset({"daily_limit_reached"})
+
+LIST_PARAMS = ("include_domains", "exclude_domains", "boost_domains", "include_paths", "exclude_paths")
+DATE_PARAMS = ("start_date", "end_date")
 
 M = TypeVar("M", bound=BaseModel)
 
@@ -60,12 +64,18 @@ def user_agent() -> str:
 def clean(body: Mapping[str, Any]) -> dict[str, Any]:
     """Drops ``None`` values so server-side defaults apply.
 
-    A non-string ``engine`` sequence (tuple, list…) is sent as a JSON array.
+    A non-string ``engine`` or domain-list sequence (tuple, list…) is sent as a JSON array;
+    ``datetime.date`` values of ``start_date`` / ``end_date`` as ``YYYY-MM-DD``.
     """
     out = {k: v for k, v in body.items() if v is not None}
-    engine = out.get("engine")
-    if engine is not None and not isinstance(engine, str):
-        out["engine"] = list(engine)
+    for name in ("engine", *LIST_PARAMS):
+        value = out.get(name)
+        if value is not None and not isinstance(value, str):
+            out[name] = list(value)
+    for name in DATE_PARAMS:
+        value = out.get(name)
+        if isinstance(value, datetime.date):
+            out[name] = value.isoformat()[:10]
     return out
 
 
@@ -184,14 +194,30 @@ class Config:
         path: str,
         json: Optional[Mapping[str, Any]],
         headers: Optional[Mapping[str, str]] = None,
+        min_timeout: Optional[float] = None,
     ) -> httpx.Request:
         return client.build_request(
             method,
             self.base_url + path,
             json=dict(json) if json is not None else None,
             headers={**self.headers, **headers} if headers else self.headers,
-            timeout=self.timeout,
+            timeout=raise_timeout(self.timeout, min_timeout),
         )
+
+
+def raise_timeout(timeout: Timeout, at_least: Optional[float]) -> Timeout:
+    """``timeout`` raised to at least ``at_least`` seconds (``None`` stays disabled)."""
+    if at_least is None or timeout is None:
+        return timeout
+    if isinstance(timeout, httpx.Timeout):
+        read = timeout.read
+        return timeout if read is None or read >= at_least else httpx.Timeout(timeout, read=at_least)
+    return max(float(timeout), at_least)
+
+
+def extract_wait(timeout: Optional[int]) -> float:
+    """HTTP timeout for /v1/extract: the server's deadline (default 50 s) plus 15 s."""
+    return float((timeout or 50) + 15)
 
 
 def vertical_body(base: Mapping[str, Any], fmt: Optional[str], fields: Optional[str]) -> dict[str, Any]:

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Annotated, Any, Literal
 from pydantic import AnyUrl, AwareDatetime, BaseModel, ConfigDict, Field, RootModel
 from uuid import UUID
+from datetime import date as date_aliased
 
 
 class Account(BaseModel):
@@ -39,7 +40,7 @@ class AutocompleteResponse(BaseModel):
     )
     request: RequestEcho
     results: list[Suggestion]
-    meta: Meta
+    meta: Meta2
 
 
 class Batch(BaseModel):
@@ -55,7 +56,7 @@ class Batch(BaseModel):
     poll_url: str
     webhook_url: str | None = None
     webhook_status: str | None = None
-    error: Error2 | None = None
+    error: Error3 | None = None
     result: dict[str, Any] | None = None
     """
     Present when done; kept 24h. The endpoint's response body, or {markdown, meta} for format=markdown jobs
@@ -94,6 +95,117 @@ class CSEResponse(BaseModel):
     context: dict[str, Any] | None = None
     searchInformation: SearchInformation
     items: list[Item]
+
+
+class CrawlPage(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    url: str
+    depth: int
+    """
+    Link hops from the start page
+    """
+    title: str | None = None
+    markdown: str | None = None
+    text: str | None = None
+    published_at: str | None = None
+    metadata: PageMetadata | None = None
+    links: list[PageLink] | None = None
+
+
+class CrawlRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    url: AnyUrl
+    """
+    Start page (always read: path filters and robots.txt apply to the pages found from it)
+    """
+    limit: Annotated[int | None, Field(ge=1, le=1000)] = 25
+    """
+    Maximum pages read (and credits reserved)
+    """
+    max_depth: Annotated[int | None, Field(ge=0, le=10)] = 2
+    """
+    Link hops from url (sitemap pages count as 1 hop; 0 reads only url)
+    """
+    include_paths: Annotated[list[str] | None, Field(max_length=20)] = None
+    """
+    Regular expressions matched against the URL path; follow only paths matching one
+    """
+    exclude_paths: Annotated[list[str] | None, Field(max_length=20)] = None
+    """
+    Regular expressions matched against the URL path; never follow paths matching one
+    """
+    include_subdomains: bool | None = False
+    sitemap: str | None = "include"
+    """
+    `include` also seeds the crawl with the site's sitemap URLs (after the start page's links), `only` reads the start page and sitemap URLs without following links, `skip` follows links only
+    """
+    query: Annotated[str | None, Field(max_length=512)] = None
+    """
+    Read the pages most relevant to these words first (best-first crawl)
+    """
+    ignore_query_parameters: bool | None = False
+    """
+    Treat URLs that differ only in their query string as one page
+    """
+    format: str | None = "markdown"
+    include_links: bool | None = False
+    """
+    Return each page's outbound links
+    """
+    max_tokens: Annotated[int | None, Field(ge=100, le=100000)] = None
+    """
+    Trim each page to this many tokens
+    """
+    max_age: Annotated[int | None, Field(ge=0, le=2592000)] = None
+    """
+    Accept cached pages up to this many seconds old (0.5 credit each)
+    """
+    webhook_url: AnyUrl | None = None
+    """
+    Receives the signed `crawl.completed` event. Defaults to the account webhook
+    """
+
+
+class CrawlResult(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    url: str
+    pages: list[CrawlPage]
+    failed: list[ExtractFailure]
+    stats: Stats
+
+
+class CrawlTask(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    id: UUID
+    kind: Literal["crawl"]
+    status: str
+    created_at: AwareDatetime
+    started_at: AwareDatetime | None = None
+    completed_at: AwareDatetime | None = None
+    credits_reserved: float
+    credits_used: float
+    webhook_status: str | None = None
+    progress: Progress | None = None
+    result: CrawlResult | None = None
+    """
+    Set once the crawl ends (also on cancel, with the pages read so far)
+    """
+    error: TaskError | None = None
+
+
+class DomainList1(RootModel[list[str]]):
+    root: Annotated[list[str], Field(examples=[["github.com/serpkite", ".gov"]], max_length=20)]
+    """
+    Domains as an array or a comma-separated string, at most 20: a host (`example.com`, subdomains match), a host with a path prefix (`github.com/org`) or a TLD (`.gov`).
+    """
 
 
 class Endpoint(BaseModel):
@@ -161,8 +273,134 @@ class Error2(BaseModel):
     model_config = ConfigDict(
         extra="allow",
     )
+    code: Annotated[
+        str, Field(examples=["invalid_request", "upstream_error", "upstream_timeout", "empty_page"])
+    ]
+    message: str
+
+
+class Error3(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
     code: str | None = None
     message: str | None = None
+
+
+class ExtractFailure(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    url: str
+    error: Error2
+
+
+class ExtractRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    urls: Annotated[list[AnyUrl], Field(max_length=20, min_length=1)]
+    """
+    HTML pages or PDFs (duplicates are dropped)
+    """
+    format: str | None = "markdown"
+    query: Annotated[str | None, Field(max_length=4096)] = None
+    """
+    What highlights are ranked against
+    """
+    highlights: Annotated[int | None, Field(ge=0, le=10)] = 0
+    """
+    Query-ranked passages per page (BM25; needs query)
+    """
+    max_tokens: Annotated[int | None, Field(ge=100, le=100000)] = None
+    """
+    Trim each page's markdown or text to about this many tokens
+    """
+    include_links: bool | None = False
+    include_images: bool | None = False
+    max_age: Annotated[int | None, Field(ge=0, le=2592000)] = None
+    """
+    Accept a cached page up to this many seconds old (0.5 credit)
+    """
+    country: str | None = None
+    """
+    Fetch through an exit in this country (ISO 3166-1 alpha-2)
+    """
+    timeout: Annotated[int | None, Field(ge=1, le=90)] = 50
+    """
+    Seconds to wait for the pages; a page still loading is listed in `failed` (`upstream_timeout`, not charged)
+    """
+
+
+class ExtractResponse(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    request: Request
+    results: list[ExtractResult]
+    failed: list[ExtractFailure]
+    meta: Meta
+
+
+class ExtractResult(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    url: str
+    """
+    Final URL after redirects
+    """
+    status_code: int | None = None
+    title: str | None = None
+    published_at: str | None = None
+    """
+    The page's published time as ISO 8601, when it has one
+    """
+    metadata: PageMetadata | None = None
+    cached: bool
+    markdown: str | None = None
+    """
+    format=markdown
+    """
+    text: str | None = None
+    """
+    format=text
+    """
+    html: str | None = None
+    """
+    format=html (null for a PDF); at most 2 MiB per page
+    """
+    links: list[PageLink] | None = None
+    """
+    include_links=true only
+    """
+    images: list[str] | None = None
+    """
+    include_images=true only
+    """
+    highlights: list[Highlight] | None = None
+    """
+    highlights > 0 only
+    """
+
+
+class Highlight(BaseModel):
+    """
+    A query-relevant passage of a page, verbatim
+    """
+
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    text: str
+    score: float
+    """
+    Relevance to the query (BM25; higher is better
+    """
+    heading: str | None = None
+    """
+    The section heading path the passage sits under
+    """
 
 
 class ImageResult(BaseModel):
@@ -186,7 +424,7 @@ class ImagesResponse(BaseModel):
     )
     request: RequestEcho
     results: list[ImageResult]
-    meta: Meta
+    meta: Meta2
 
 
 class Item(BaseModel):
@@ -230,6 +468,60 @@ class KnowledgeGraph(BaseModel):
     attributes: dict[str, str] | None = None
 
 
+class MapRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    url: AnyUrl
+    """
+    The site (any page of it; sitemaps are read from its origin)
+    """
+    search: Annotated[str | None, Field(max_length=512)] = None
+    """
+    Keep only URLs relevant to these words, most relevant first
+    """
+    limit: Annotated[int | None, Field(ge=1, le=5000)] = 100
+    include_subdomains: bool | None = False
+    include_paths: Annotated[list[str] | None, Field(max_length=20)] = None
+    """
+    Regular expressions matched against the URL path; keep only URLs matching one
+    """
+    exclude_paths: Annotated[list[str] | None, Field(max_length=20)] = None
+    """
+    Regular expressions matched against the URL path; drop URLs matching one
+    """
+    ignore_query_parameters: bool | None = False
+    """
+    Treat URLs that differ only in their query string as one (the first one found is kept)
+    """
+    sitemap: str | None = "include"
+    """
+    `include` sitemaps and the start page's links, `only` sitemaps, `skip` sitemaps (links only)
+    """
+
+
+class MapResponse(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    request: Request1
+    results: list[MapURL]
+    meta: Meta1
+
+
+class MapURL(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    url: str
+    title: str | None = None
+    lastmod: str | None = None
+    """
+    The sitemap's lastmod, as written
+    """
+    source: str
+
+
 class Match(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -240,6 +532,27 @@ class Match(BaseModel):
 
 
 class Meta(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    request_id: str
+    credits_used: float
+    latency_ms: int | None = None
+    succeeded: int
+    failed: int
+
+
+class Meta1(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    request_id: str
+    credits_used: float
+    latency_ms: int | None = None
+    count: int
+
+
+class Meta2(BaseModel):
     model_config = ConfigDict(
         extra="allow",
     )
@@ -260,6 +573,275 @@ class Meta(BaseModel):
     latency_ms: int | None = None
 
 
+class Monitor(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    id: UUID
+    name: str
+    endpoint: str
+    request: MonitorSearch
+    metadata: dict[str, Any] | None = None
+    interval_seconds: int
+    webhook_url: str | None
+    """
+    Null when new results are only kept in the run history
+    """
+    active: bool
+    next_run_at: AwareDatetime
+    last_run_at: AwareDatetime | None = None
+    last_status: str | None = None
+    last_error: str | None = None
+    last_new_results: int | None = None
+    """
+    New results found by the last run
+    """
+    runs: int
+    consecutive_failures: int
+    """
+    Failed runs in a row; the monitor pauses itself at 10
+    """
+    credits_used: float
+    """
+    Total over all runs
+    """
+    created_at: AwareDatetime
+
+
+class MonitorCreateRequest(BaseModel):
+    """
+    Search and news monitors need `q`; webpage monitors need `url` and take only `country` besides
+    """
+
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    q: Annotated[str | None, Field(max_length=2048, min_length=1)] = None
+    url: AnyUrl | None = None
+    """
+    endpoint=webpage: the page to watch for content changes
+    """
+    endpoint: str | None = "search"
+    metadata: dict[str, Any] | None = None
+    """
+    Your own JSON object (at most 2 KB), echoed on the monitor and in its webhooks
+    """
+    name: Annotated[str | None, Field(max_length=200)] = None
+    interval: str | None = "daily"
+    interval_seconds: Annotated[int | None, Field(ge=3600, le=2592000)] = None
+    """
+    Overrides interval
+    """
+    webhook_url: AnyUrl | None = None
+    """
+    Receives signed `monitor.results` events. Without one, read new results from the run history
+    """
+    active: bool | None = True
+    """
+    false creates the monitor paused
+    """
+    country: str | None = None
+    language: str | None = None
+    location: str | None = None
+    time: str | None = None
+    num: Annotated[int | None, Field(ge=1, le=100)] = None
+    device: str | None = None
+    safe: str | None = None
+    include_domains: str | DomainList1 | None = None
+    """
+    Domains as an array or a comma-separated string, at most 20: a host (`example.com`, subdomains match), a host with a path prefix (`github.com/org`) or a TLD (`.gov`).
+    """
+    exclude_domains: str | DomainList1 | None = None
+    """
+    Domains as an array or a comma-separated string, at most 20: a host (`example.com`, subdomains match), a host with a path prefix (`github.com/org`) or a TLD (`.gov`).
+    """
+    engine: str | EngineParam1 | None = None
+    """
+    Which search providers may answer. `google` (the default) is Google only; within Google, SerpKite always fails over across its own proxy pools. `auto` allows falling back to other enabled providers, in route order, when Google is blocked or times out. A single other provider (`brave`) or a list (`["google","brave"]`, or `google,brave` in a query string) restricts the request to those providers. `meta.engine` always names the provider that answered and credits follow that provider's price. A key with "Allow fallback to other search engines" on treats a request without `engine` as `auto`. `consensus` (`/v1/search` only; 400 elsewhere, and it can't be combined with other names) queries several independent search indexes in parallel (at most one Bing-backed provider, so Yahoo or DuckDuckGo never count as agreeing with Bing), merges the results by URL and ranks them by how many providers returned each one. Each result lists its `sources`; `meta.engine` is `consensus` and `meta.route` lists every provider attempt. It stops once `num` unique results are in hand or after a few seconds, and costs the sum of one page at each provider that returned results (providers that failed, came back empty or were never started are free).
+    """
+
+
+class MonitorList(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    results: list[Monitor]
+
+
+class MonitorPageChange(BaseModel):
+    """
+    What a webpage monitor reports when the page is new to it or its content changed
+    """
+
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    url: str
+    """
+    Final URL after redirects
+    """
+    title: str | None = None
+    change: str
+    content_hash: str
+    """
+    Fingerprint of the content (whitespace-insensitive)
+    """
+    markdown: str
+    """
+    The page's Markdown (up to about 8
+    """
+    published_at: str | None = None
+
+
+class MonitorResultsEvent(BaseModel):
+    """
+    Body of `monitor.results`
+    """
+
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    event: Literal["monitor.results"]
+    monitor_id: UUID
+    run_id: UUID
+    """
+    Also the X-SerpKite-Delivery header; use it to deduplicate retries
+    """
+    name: str
+    endpoint: str
+    q: str
+    """
+    The saved query (empty for webpage monitors)
+    """
+    url: str | None = None
+    """
+    webpage monitors only
+    """
+    metadata: dict[str, Any] | None = None
+    """
+    The monitor's metadata
+    """
+    first_run: bool
+    """
+    The first run since the monitor was created or its search changed
+    """
+    run_at: AwareDatetime
+    new_results: list[dict[str, Any]]
+    """
+    Results not seen in earlier runs (OrganicResult-shaped for search, NewsResult for news, MonitorPageChange for webpage)
+    """
+    credits_used: float
+    """
+    This run's price
+    """
+
+
+class MonitorRun(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    id: UUID
+    status: str
+    error: str | None = None
+    new_results: int
+    results: list[dict[str, Any]] | None = None
+    """
+    The new results (OrganicResult-shaped for search, NewsResult for news, MonitorPageChange for webpage); null when there were none or after 24 hours
+    """
+    credits_used: float
+    webhook_status: str | None = None
+    """
+    none = the monitor has no webhook; null = nothing to send
+    """
+    created_at: AwareDatetime
+
+
+class MonitorRunList(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    results: list[MonitorRun]
+    next_before: UUID | None
+    """
+    Pass as `before` for the next page; null on the last page
+    """
+
+
+class MonitorSearch(BaseModel):
+    """
+    The saved request a monitor reruns: a search (q and options) or, for webpage monitors, url (and country)
+    """
+
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    q: str | None = None
+    url: str | None = None
+    country: str | None = None
+    language: str | None = None
+    location: str | None = None
+    time: str | None = None
+    num: int | None = None
+    device: str | None = None
+    safe: str | None = None
+    include_domains: list[str] | None = None
+    exclude_domains: list[str] | None = None
+    engine: list[str] | None = None
+
+
+class MonitorUpdateRequest(BaseModel):
+    """
+    Only the fields sent change. Search fields are merged into the saved search; a changed search (or endpoint) makes the next run report every result as new.
+    """
+
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    name: Annotated[str | None, Field(max_length=200)] = None
+    interval: str | None = None
+    interval_seconds: Annotated[int | None, Field(ge=3600, le=2592000)] = None
+    webhook_url: str | None = None
+    """
+    A webhook URL, or an empty string to remove it
+    """
+    active: bool | None = None
+    """
+    true resumes a paused monitor (due now, failure streak cleared)
+    """
+    metadata: dict[str, Any] | None = None
+    """
+    Replaces the metadata (null clears it)
+    """
+    endpoint: str | None = None
+    """
+    Switching between a search and a page drops the other kind's fields
+    """
+    q: Annotated[str | None, Field(max_length=2048, min_length=1)] = None
+    url: AnyUrl | None = None
+    """
+    endpoint=webpage only
+    """
+    country: str | None = None
+    language: str | None = None
+    location: str | None = None
+    time: str | None = None
+    num: Annotated[int | None, Field(ge=1, le=100)] = None
+    device: str | None = None
+    safe: str | None = None
+    include_domains: str | DomainList1 | None = None
+    """
+    Domains as an array or a comma-separated string, at most 20: a host (`example.com`, subdomains match), a host with a path prefix (`github.com/org`) or a TLD (`.gov`).
+    """
+    exclude_domains: str | DomainList1 | None = None
+    """
+    Domains as an array or a comma-separated string, at most 20: a host (`example.com`, subdomains match), a host with a path prefix (`github.com/org`) or a TLD (`.gov`).
+    """
+    engine: str | EngineParam1 | None = None
+    """
+    Which search providers may answer. `google` (the default) is Google only; within Google, SerpKite always fails over across its own proxy pools. `auto` allows falling back to other enabled providers, in route order, when Google is blocked or times out. A single other provider (`brave`) or a list (`["google","brave"]`, or `google,brave` in a query string) restricts the request to those providers. `meta.engine` always names the provider that answered and credits follow that provider's price. A key with "Allow fallback to other search engines" on treats a request without `engine` as `auto`. `consensus` (`/v1/search` only; 400 elsewhere, and it can't be combined with other names) queries several independent search indexes in parallel (at most one Bing-backed provider, so Yahoo or DuckDuckGo never count as agreeing with Bing), merges the results by URL and ranks them by how many providers returned each one. Each result lists its `sources`; `meta.engine` is `consensus` and `meta.route` lists every provider attempt. It stops once `num` unique results are in hand or after a few seconds, and costs the sum of one page at each provider that returned results (providers that failed, came back empty or were never started are free).
+    """
+
+
 class Month(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -274,7 +856,7 @@ class NewsResponse(BaseModel):
     )
     request: RequestEcho
     results: list[NewsResult]
-    meta: Meta
+    meta: Meta2
 
 
 class NewsResult(BaseModel):
@@ -287,6 +869,10 @@ class NewsResult(BaseModel):
     domain: str | None = None
     snippet: str | None = None
     date: str | None = None
+    published_at: str | None = None
+    """
+    `date` as ISO 8601 when it parses
+    """
     source: str | None = None
     image_url: str | None = None
 
@@ -312,13 +898,35 @@ class OrganicResult(BaseModel):
     attributes: dict[str, str] | None = None
     rating: float | None = None
     rating_count: int | None = None
+    published_at: Annotated[str | None, Field(examples=["2026-09-30", "2026-10-03T09:00:00Z"])] = None
+    """
+    `date` as an ISO 8601 date or date-time when it parses (relative dates resolved against the fetch time)
+    """
     content: str | None = None
     """
     Page Markdown when include_content covered this result
     """
+    highlights: list[Highlight] | None = None
+    """
+    highlights=true only. Query-ranked passages of the fetched page, best first (instead of content)
+    """
     sources: Annotated[list[str] | None, Field(examples=[["google", "brave", "bing"]])] = None
     """
     engine=consensus only. The providers that returned this result, in route order; results are ranked by how many there are
+    """
+
+
+class PageLink(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    url: str
+    """
+    Absolute URL
+    """
+    text: str | None = None
+    """
+    Anchor text
     """
 
 
@@ -334,6 +942,14 @@ class PageMetadata(BaseModel):
     image: str | None = None
     published_time: str | None = None
     author: str | None = None
+    content_type: Annotated[str | None, Field(examples=["text/html", "application/pdf"])] = None
+    """
+    The page's media type
+    """
+    pages: int | None = None
+    """
+    Page count of a PDF
+    """
 
 
 class PatentResult(BaseModel):
@@ -362,7 +978,7 @@ class PatentsResponse(BaseModel):
     )
     request: RequestEcho
     results: list[PatentResult]
-    meta: Meta
+    meta: Meta2
 
 
 class PeopleAlsoAsk(BaseModel):
@@ -404,7 +1020,18 @@ class PlacesResponse(BaseModel):
     )
     request: RequestEcho
     results: list[PlaceResult]
-    meta: Meta
+    meta: Meta2
+
+
+class Progress(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    pages_done: int | None = None
+    pages_failed: int | None = None
+    pages_queued: int | None = None
+    pages_discovered: int | None = None
+    limit: int | None = None
 
 
 class RankRequest(BaseModel):
@@ -439,7 +1066,7 @@ class RankResponse(BaseModel):
     """
     Organic results inspected
     """
-    meta: Meta
+    meta: Meta2
 
 
 class RelatedSearch(BaseModel):
@@ -447,6 +1074,31 @@ class RelatedSearch(BaseModel):
         extra="allow",
     )
     query: str
+
+
+class Request(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    endpoint: Literal["extract"] | None = None
+    urls: list[str] | None = None
+    format: str | None = None
+    query: str | None = None
+
+
+class Request1(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    endpoint: Literal["map"] | None = None
+    url: str | None = None
+    search: str | None = None
+    limit: int | None = None
+    sitemap: str | None = None
+    include_subdomains: bool | None = None
+    include_paths: list[str] | None = None
+    exclude_paths: list[str] | None = None
+    ignore_query_parameters: bool | None = None
 
 
 class RequestEcho(BaseModel):
@@ -472,6 +1124,8 @@ class RequestEcho(BaseModel):
     device: str | None = None
     autocorrect: bool | None = None
     tbs: str | None = None
+    start_date: date_aliased | None = None
+    end_date: date_aliased | None = None
     safe: str | None = None
     place_id: str | None = None
     cid: str | None = None
@@ -479,6 +1133,10 @@ class RequestEcho(BaseModel):
     sort: str | None = None
     include_content: int | None = None
     format: str | None = None
+    include_domains: list[str] | None = None
+    exclude_domains: list[str] | None = None
+    boost_domains: list[str] | None = None
+    highlights: bool | None = None
 
 
 class Response(BaseModel):
@@ -539,7 +1197,7 @@ class ReviewsResponse(BaseModel):
     """
     Pass as `page_token` for the next page. Absent on the last page and at the 100-review depth limit
     """
-    meta: Meta
+    meta: Meta2
 
 
 class RouteStep(BaseModel):
@@ -564,7 +1222,7 @@ class ScholarResponse(BaseModel):
     )
     request: RequestEcho
     results: list[ScholarResult]
-    meta: Meta
+    meta: Meta2
 
 
 class ScholarResult(BaseModel):
@@ -655,6 +1313,30 @@ class SearchRequest(BaseModel):
     """
     Which search providers may answer. `google` (the default) is Google only; within Google, SerpKite always fails over across its own proxy pools. `auto` allows falling back to other enabled providers, in route order, when Google is blocked or times out. A single other provider (`brave`) or a list (`["google","brave"]`, or `google,brave` in a query string) restricts the request to those providers. `meta.engine` always names the provider that answered and credits follow that provider's price. A key with "Allow fallback to other search engines" on treats a request without `engine` as `auto`. `consensus` (`/v1/search` only; 400 elsewhere, and it can't be combined with other names) queries several independent search indexes in parallel (at most one Bing-backed provider, so Yahoo or DuckDuckGo never count as agreeing with Bing), merges the results by URL and ranks them by how many providers returned each one. Each result lists its `sources`; `meta.engine` is `consensus` and `meta.route` lists every provider attempt. It stops once `num` unique results are in hand or after a few seconds, and costs the sum of one page at each provider that returned results (providers that failed, came back empty or were never started are free).
     """
+    include_domains: str | DomainList1 | None = None
+    """
+    Only results from these domains (search, news, images, videos). Compiled into site: operators and enforced on the results. Not with engine=consensus
+    """
+    exclude_domains: str | DomainList1 | None = None
+    """
+    Drop results from these domains (search, news, images, videos). Not with engine=consensus
+    """
+    boost_domains: str | DomainList1 | None = None
+    """
+    Move results from these domains to the top, keeping the order within both groups (search, news)
+    """
+    start_date: date_aliased | None = None
+    """
+    Only results published on or after this date, YYYY-MM-DD (search, news, images, videos). Can't be combined with time or tbs. A fallback engine without date ranges is skipped
+    """
+    end_date: date_aliased | None = None
+    """
+    Only results published on or before this date, YYYY-MM-DD. Can't be combined with time or tbs
+    """
+    highlights: bool | None = False
+    """
+    Return up to 3 query-ranked passages (`highlights`) of each page read by include_content instead of the whole page (search only; needs include_content; no extra credits)
+    """
 
 
 class SearchResponse(BaseModel):
@@ -670,7 +1352,7 @@ class SearchResponse(BaseModel):
     related_searches: list[RelatedSearch]
     top_stories: list[NewsResult] | None = None
     places: list[PlaceResult] | None = None
-    meta: Meta
+    meta: Meta2
 
 
 class ShoppingResponse(BaseModel):
@@ -679,7 +1361,7 @@ class ShoppingResponse(BaseModel):
     )
     request: RequestEcho
     results: list[ShoppingResult]
-    meta: Meta
+    meta: Meta2
 
 
 class ShoppingResult(BaseModel):
@@ -710,6 +1392,51 @@ class Sitelink(BaseModel):
     snippet: str | None = None
 
 
+class Stats(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    pages: int | None = None
+    failed: int | None = None
+    seconds: int | None = None
+    discovered: int | None = None
+    """
+    Unique URLs found that passed the filters
+    """
+    queued: int | None = None
+    """
+    Found but not read when the crawl ended
+    """
+    duplicates: int | None = None
+    """
+    Pages that redirected to a page already read (not charged)
+    """
+    sitemap_urls: int | None = None
+    """
+    URLs taken from sitemaps
+    """
+    robots: str | None = None
+    """
+    The start host's robots.txt
+    """
+    robots_disallowed: int | None = None
+    """
+    Disallow rules in force on the start host
+    """
+    robots_blocked: int | None = None
+    """
+    URLs skipped because robots.txt disallows them
+    """
+    crawl_delay_ms: int | None = None
+    """
+    The start host's Crawl-delay, honoured
+    """
+    stopped: str | None = None
+    """
+    Why the crawl ended
+    """
+
+
 class Status(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -725,6 +1452,69 @@ class Suggestion(BaseModel):
         extra="allow",
     )
     value: str
+
+
+class TaskCancelResponse(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    id: UUID
+    status: str
+
+
+class TaskCompletedEvent(BaseModel):
+    """
+    Body of `crawl.completed`
+    """
+
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    event: Literal["crawl.completed"]
+    id: UUID
+    kind: Literal["crawl"]
+    status: str
+    created_at: AwareDatetime
+    completed_at: AwareDatetime | None = None
+    credits_used: float
+    poll_url: str | None = None
+    """
+    Where the task (and its full result) can be fetched for 24 hours
+    """
+    result: Any | None = None
+    """
+    The CrawlResult (null when the crawl failed without one, or when it is larger than 4 MB: see result_omitted)
+    """
+    result_omitted: bool | None = None
+    """
+    Set when the result was too large for the webhook; GET poll_url for it
+    """
+    error: Error3 | None = None
+
+
+class TaskCreated(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    id: UUID
+    kind: str
+    status: str
+    created_at: AwareDatetime
+    poll_url: str
+    credits_reserved: float
+    webhook_url: str | None = None
+
+
+class TaskError(BaseModel):
+    """
+    Set when the task failed or was canceled
+    """
+
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    code: Annotated[str | None, Field(examples=["no_pages", "canceled", "timeout", "internal"])] = None
+    message: str | None = None
 
 
 class User(BaseModel):
@@ -750,6 +1540,10 @@ class VideoResult(BaseModel):
     source: str | None = None
     channel: str | None = None
     date: str | None = None
+    published_at: str | None = None
+    """
+    `date` as ISO 8601 when it parses
+    """
 
 
 class VideosResponse(BaseModel):
@@ -758,7 +1552,7 @@ class VideosResponse(BaseModel):
     )
     request: RequestEcho
     results: list[VideoResult]
-    meta: Meta
+    meta: Meta2
 
 
 class WebpageRequest(BaseModel):
@@ -766,8 +1560,23 @@ class WebpageRequest(BaseModel):
         extra="allow",
     )
     url: AnyUrl
+    """
+    An HTML page or a PDF
+    """
     format: str | None = "json"
     include_html: bool | None = False
+    include_links: bool | None = False
+    """
+    Also return the page's outbound links (`links`)
+    """
+    include_images: bool | None = False
+    """
+    Also return the page's image URLs (`image_links`)
+    """
+    country: str | None = None
+    """
+    Fetch through an exit in this country (ISO 3166-1 alpha-2) for geo-dependent pages
+    """
     max_age: int | None = None
 
 
@@ -788,4 +1597,12 @@ class WebpageResponse(BaseModel):
     Only with include_html=true
     """
     metadata: PageMetadata
-    meta: Meta
+    links: list[PageLink] | None = None
+    """
+    include_links=true only. Outbound links in document order, deduplicated
+    """
+    image_links: list[str] | None = None
+    """
+    include_images=true only. Image URLs in document order
+    """
+    meta: Meta2

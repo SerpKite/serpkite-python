@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import json
 from typing import Any
 
@@ -23,6 +24,8 @@ from serpkite import (
 from serpkite.types import (
     Account,
     AccountKey,
+    ExtractResponse,
+    MapResponse,
     NewsResponse,
     OrganicResult,
     RankResponse,
@@ -205,7 +208,9 @@ def test_webpage_rank_account() -> None:
                     "url": "https://example.com/",
                     "status_code": 200,
                     "markdown": "# Example",
-                    "metadata": {"title": "Example"},
+                    "metadata": {"title": "Example", "content_type": "text/html"},
+                    "links": [{"url": "https://example.com/docs", "text": "Docs"}],
+                    "image_links": ["https://example.com/logo.png"],
                     "meta": meta(),
                 },
             ),
@@ -240,10 +245,20 @@ def test_webpage_rank_account() -> None:
     )
     sk = SerpKite()
 
-    page = sk.webpage("https://example.com", include_html=True)
+    page = sk.webpage(
+        "https://example.com", include_html=True, include_links=True, include_images=True, country="de"
+    )
     assert isinstance(page, WebpageResponse)
     assert page.metadata.title == "Example"
-    assert sent_json(web, 0) == {"url": "https://example.com", "include_html": True}
+    assert page.links is not None and page.links[0].url == "https://example.com/docs"
+    assert page.image_links == ["https://example.com/logo.png"]
+    assert sent_json(web, 0) == {
+        "url": "https://example.com",
+        "include_html": True,
+        "include_links": True,
+        "include_images": True,
+        "country": "de",
+    }
     assert sk.webpage("https://example.com", format="markdown") == "# Example"
     assert sent_json(web, 1) == {"url": "https://example.com", "format": "markdown"}
 
@@ -406,3 +421,117 @@ def test_low_level_request() -> None:
     assert sk.request("news", {"q": "x", "country": None})["request"]["endpoint"] == "news"
     assert sk.request("/news/", {"q": "x", "format": "markdown"}) == "**a**"
     assert sent_json(route, 0) == {"q": "x"}
+
+
+@respx.mock
+def test_search_controls() -> None:
+    body = search_body()
+    body["results"][0]["published_at"] = "2026-09-30"
+    body["results"][0]["highlights"] = [{"text": "passage", "score": 0.9, "heading": "Intro"}]
+    route = respx.post(f"{BASE}/v1/search").mock(return_value=httpx.Response(200, json=body))
+    res = SerpKite().search(
+        "espresso",
+        include_domains=("github.com", "en.wikipedia.org"),
+        exclude_domains="reddit.com",
+        boost_domains=["arxiv.org"],
+        start_date=datetime.date(2026, 1, 1),
+        end_date="2026-03-31",
+        include_content=2,
+        highlights=True,
+    )
+    assert isinstance(res, SearchResponse)
+    assert res.results[0].published_at == "2026-09-30"
+    assert res.results[0].highlights is not None and res.results[0].highlights[0].heading == "Intro"
+    assert sent_json(route) == {
+        "q": "espresso",
+        "include_domains": ["github.com", "en.wikipedia.org"],
+        "exclude_domains": "reddit.com",
+        "boost_domains": ["arxiv.org"],
+        "start_date": "2026-01-01",
+        "end_date": "2026-03-31",
+        "include_content": 2,
+        "highlights": True,
+    }
+
+
+@respx.mock
+def test_map() -> None:
+    route = respx.post(f"{BASE}/v1/map").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "request": {"endpoint": "map", "url": "https://docs.example.com/", "limit": 50},
+                "results": [
+                    {"url": "https://docs.example.com/install", "lastmod": "2026-09-01", "source": "sitemap"}
+                ],
+                "meta": {"request_id": "r", "credits_used": 1, "count": 1},
+            },
+        )
+    )
+    res = SerpKite().map("https://docs.example.com/", search="install", include_paths=("^/docs/",), limit=50)
+    assert isinstance(res, MapResponse)
+    assert res.results[0].source == "sitemap" and res.meta.count == 1
+    assert sent_json(route) == {
+        "url": "https://docs.example.com/",
+        "search": "install",
+        "limit": 50,
+        "include_paths": ["^/docs/"],
+    }
+
+
+@respx.mock
+def test_extract() -> None:
+    route = respx.post(f"{BASE}/v1/extract").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "request": {"endpoint": "extract", "urls": ["https://a.example.com/x"], "format": "markdown"},
+                "results": [
+                    {
+                        "url": "https://a.example.com/x",
+                        "cached": False,
+                        "markdown": "# X",
+                        "highlights": [{"text": "passage", "score": 2.5}],
+                    }
+                ],
+                "failed": [{"url": "ftp://x", "error": {"code": "invalid_request", "message": "bad url"}}],
+                "meta": {"request_id": "r", "credits_used": 1, "succeeded": 1, "failed": 1},
+            },
+        )
+    )
+    res = SerpKite().extract(
+        ("https://a.example.com/x", "ftp://x"), query="x", highlights=1, include_links=True
+    )
+    assert isinstance(res, ExtractResponse)
+    assert res.results[0].highlights is not None and res.results[0].highlights[0].score == 2.5
+    assert res.failed[0].error.code == "invalid_request"
+    assert sent_json(route) == {
+        "urls": ["https://a.example.com/x", "ftp://x"],
+        "query": "x",
+        "highlights": 1,
+        "include_links": True,
+    }
+
+
+@respx.mock
+def test_extract_is_not_retried_and_waits_for_the_server() -> None:
+    # A lost extract response was still billed: 5xx and read timeouts are not retried.
+    route = respx.post(f"{BASE}/v1/extract").mock(
+        return_value=httpx.Response(503, json=error_body("upstream_error"))
+    )
+    with pytest.raises(APIError):
+        SerpKite(max_retries=2).extract(["https://a.example.com/x"])
+    assert route.call_count == 1
+    route.mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "request": {},
+                "results": [],
+                "failed": [],
+                "meta": {"request_id": "r", "credits_used": 0, "succeeded": 0, "failed": 0},
+            },
+        )
+    )
+    SerpKite(timeout=10.0).extract(["https://a.example.com/x"], timeout=80)
+    assert route.calls.last.request.extensions["timeout"]["read"] == 95.0

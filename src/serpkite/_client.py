@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from types import TracebackType
-from typing import Any, Literal, Optional, Union, overload
+from typing import Any, Literal, Optional, TypeVar, Union, overload
 
 import httpx
 from typing_extensions import Self, Unpack
@@ -18,20 +18,31 @@ from ._base import (
     M,
     Timeout,
     clean,
+    extract_wait,
     parse_body,
     retry_delay,
     retryable_exception,
     should_retry,
     vertical_body,
 )
-from ._exceptions import APIConnectionError, APITimeoutError, BatchTimeoutError
+from ._exceptions import (
+    APIConnectionError,
+    APITimeoutError,
+    BatchTimeoutError,
+    TaskTimeoutError,
+    from_response,
+)
+from ._tasks import TASK_FINAL_STATUSES, AsyncMonitors, Id, Monitors, next_poll, path_id, task_body
 from .types import (
     Account,
     AutocompleteResponse,
     Batch,
     BatchCreateResponse,
     BatchEndpoint,
+    CrawlTask,
+    ExtractResponse,
     ImagesResponse,
+    MapResponse,
     NewsResponse,
     PatentsResponse,
     PlacesResponse,
@@ -43,7 +54,10 @@ from .types import (
     SearchParams,
     SearchResponse,
     ShoppingResponse,
+    SitemapMode,
     Status,
+    TaskCancelResponse,
+    TaskCreated,
     VideosResponse,
     WebpageResponse,
 )
@@ -52,6 +66,7 @@ __all__ = ["AsyncBatches", "AsyncSerpKite", "Batches", "SerpKite"]
 
 Format = Literal["json", "markdown", "compact"]
 FINAL_STATUSES = frozenset({"done", "failed"})
+T = TypeVar("T")
 
 # Indirections so tests can skip real sleeping.
 _sleep = time.sleep
@@ -204,6 +219,7 @@ class SerpKite:
         self._owns_client = http_client is None
         self._http = http_client if http_client is not None else httpx.Client()
         self.batches = Batches(self)
+        self.monitors = Monitors(self)
 
     @property
     def base_url(self) -> str:
@@ -236,10 +252,11 @@ class SerpKite:
         json: Optional[Mapping[str, Any]],
         idempotent: bool = True,
         headers: Optional[Mapping[str, str]] = None,
+        min_timeout: Optional[float] = None,
     ) -> httpx.Response:
         attempt = 0
         while True:
-            request = self._config.build(self._http, method, path, json, headers)
+            request = self._config.build(self._http, method, path, json, headers, min_timeout)
             try:
                 response = self._http.send(request)
             except httpx.TransportError as exc:
@@ -264,8 +281,9 @@ class SerpKite:
         json: Optional[Mapping[str, Any]],
         idempotent: bool = True,
         headers: Optional[Mapping[str, str]] = None,
+        min_timeout: Optional[float] = None,
     ) -> Any:
-        return parse_body(self._send(method, path, json, idempotent, headers), None, None, None)
+        return parse_body(self._send(method, path, json, idempotent, headers, min_timeout), None, None, None)
 
     def _vertical(
         self,
@@ -795,6 +813,9 @@ class SerpKite:
         *,
         format: Literal["markdown"],
         include_html: bool = False,
+        include_links: bool = False,
+        include_images: bool = False,
+        country: Optional[str] = None,
         max_age: Optional[int] = None,
     ) -> str: ...
     @overload
@@ -804,6 +825,9 @@ class SerpKite:
         *,
         format: Optional[Literal["json"]] = None,
         include_html: bool = False,
+        include_links: bool = False,
+        include_images: bool = False,
+        country: Optional[str] = None,
         max_age: Optional[int] = None,
     ) -> WebpageResponse: ...
     def webpage(
@@ -812,16 +836,160 @@ class SerpKite:
         *,
         format: Optional[Literal["json", "markdown"]] = None,
         include_html: bool = False,
+        include_links: bool = False,
+        include_images: bool = False,
+        country: Optional[str] = None,
         max_age: Optional[int] = None,
     ) -> Union[WebpageResponse, str]:
-        """Fetch any public URL and return clean Markdown plus metadata (1 credit).
+        """Fetch any public URL (HTML or PDF) and return clean Markdown plus metadata (1 credit).
 
         ``format="markdown"`` returns just the page Markdown as a ``str``.
+        ``include_links`` / ``include_images`` add the page's outbound links and image URLs.
+        ``country`` fetches through an exit in that country (geo-dependent pages).
         """
-        body: dict[str, Any] = {"url": url, "max_age": max_age}
+        body: dict[str, Any] = {"url": url, "country": country, "max_age": max_age}
         if include_html:
             body["include_html"] = True
+        if include_links:
+            body["include_links"] = True
+        if include_images:
+            body["include_images"] = True
         return self._vertical("/v1/webpage", WebpageResponse, body, format, None)
+
+    def extract(
+        self,
+        urls: Sequence[str],
+        *,
+        format: Optional[Literal["markdown", "text", "html"]] = None,
+        query: Optional[str] = None,
+        highlights: Optional[int] = None,
+        max_tokens: Optional[int] = None,
+        include_links: bool = False,
+        include_images: bool = False,
+        max_age: Optional[int] = None,
+        country: Optional[str] = None,
+        timeout: Optional[int] = None,
+    ) -> ExtractResponse:
+        """Read up to 20 URLs (HTML or PDF) as Markdown, text or HTML in one call.
+
+        ``query`` + ``highlights`` (1-10) add the passages of each page most relevant to the
+        query (BM25). 1 credit per URL that comes back (0.5 from cache); URLs that fail are
+        listed in ``failed`` and cost nothing. ``timeout`` (seconds, 1-90, default 50) reports pages
+        still loading as failed (``upstream_timeout``)."""
+        body = clean(
+            {
+                "urls": list(urls),
+                "format": format,
+                "query": query,
+                "highlights": highlights,
+                "max_tokens": max_tokens,
+                "include_links": include_links or None,
+                "include_images": include_images or None,
+                "max_age": max_age,
+                "country": country,
+                "timeout": timeout,
+            }
+        )
+        # Billed per page even when the response is lost: no retry on 5xx or a read timeout.
+        raw = self._json("POST", "/v1/extract", body, idempotent=False, min_timeout=extract_wait(timeout))
+        return ExtractResponse.model_validate(raw)
+
+    def map(
+        self,
+        url: str,
+        *,
+        search: Optional[str] = None,
+        limit: Optional[int] = None,
+        include_subdomains: bool = False,
+        sitemap: Optional[SitemapMode] = None,
+        include_paths: Optional[Sequence[str]] = None,
+        exclude_paths: Optional[Sequence[str]] = None,
+        ignore_query_parameters: bool = False,
+    ) -> MapResponse:
+        """The URLs of a site, from robots.txt sitemaps and the start page's links, optionally
+        ranked and filtered by ``search``. ``include_paths`` / ``exclude_paths`` are regexes
+        matched against the URL path; ``ignore_query_parameters`` folds URLs that differ only in
+        their query string. URLs come back cleaned (fragments and tracking parameters dropped)
+        and de-duplicated. 1 credit (free when nothing is found)."""
+        body = clean(
+            {
+                "url": url,
+                "search": search,
+                "limit": limit,
+                "include_subdomains": include_subdomains or None,
+                "sitemap": sitemap,
+                "include_paths": include_paths,
+                "exclude_paths": exclude_paths,
+                "ignore_query_parameters": ignore_query_parameters or None,
+            }
+        )
+        return MapResponse.model_validate(self._json("POST", "/v1/map", body))
+
+    def crawl(
+        self,
+        url: str,
+        *,
+        limit: Optional[int] = None,
+        max_depth: Optional[int] = None,
+        include_paths: Optional[Sequence[str]] = None,
+        exclude_paths: Optional[Sequence[str]] = None,
+        include_subdomains: bool = False,
+        sitemap: Optional[SitemapMode] = None,
+        query: Optional[str] = None,
+        ignore_query_parameters: bool = False,
+        format: Optional[Literal["markdown", "text"]] = None,
+        include_links: bool = False,
+        max_tokens: Optional[int] = None,
+        max_age: Optional[int] = None,
+        webhook_url: Optional[str] = None,
+    ) -> TaskCreated:
+        """Start an async crawl of one site (same host, each host's robots.txt honoured), up to
+        ``limit`` pages and ``max_depth`` (0-10, default 2) link hops. ``include_paths`` /
+        ``exclude_paths`` are regexes matched against the URL path. ``sitemap`` ``"include"``
+        (default) also seeds the crawl with the site's sitemap URLs, ``"only"`` reads the start
+        page and sitemap URLs without following links, ``"skip"`` follows links only. ``query``
+        makes it best first (pages whose URL and link text match are read first);
+        ``ignore_query_parameters`` treats URLs that differ only in their query string as one.
+
+        1 credit per page read (0.5 from cache); ``limit`` (default 25, max 1000) credits are
+        reserved up front and the rest refunded. Poll with :meth:`get_crawl` or
+        :meth:`wait_for_crawl`, or receive the signed ``crawl.completed`` webhook. Only retried
+        on 429, so a lost response never starts (and reserves) a second crawl."""
+        body = task_body(
+            {
+                "url": url,
+                "limit": limit,
+                "max_depth": max_depth,
+                "include_paths": include_paths,
+                "exclude_paths": exclude_paths,
+                "include_subdomains": include_subdomains,
+                "sitemap": sitemap,
+                "query": query,
+                "ignore_query_parameters": ignore_query_parameters,
+                "format": format,
+                "include_links": include_links,
+                "max_tokens": max_tokens,
+                "max_age": max_age,
+                "webhook_url": webhook_url,
+            }
+        )
+        return TaskCreated.model_validate(self._json("POST", "/v1/crawl", body, idempotent=False))
+
+    def get_crawl(self, id: Id) -> CrawlTask:
+        """Current state of a crawl (``result`` once it ends; kept 24 h)."""
+        return CrawlTask.model_validate(self._json("GET", f"/v1/crawl/{path_id(id)}", None))
+
+    def cancel_crawl(self, id: Id) -> TaskCancelResponse:
+        """Cancel a crawl: a queued one is refunded at once (``canceled``); a running one stops at
+        its next checkpoint (``canceling``) and is charged for the pages read."""
+        return TaskCancelResponse.model_validate(self._json("DELETE", f"/v1/crawl/{path_id(id)}", None))
+
+    def wait_for_crawl(self, id: Id, *, timeout: float = 2100.0, poll_interval: float = 2.0) -> CrawlTask:
+        """Poll (backing off up to 15 s) until the crawl is ``completed``, ``failed`` or
+        ``canceled`` (a failed task is returned, not raised; check ``status`` and ``error``).
+        Raises :class:`TaskTimeoutError` after ``timeout`` (default 35 minutes: a crawl runs for
+        up to 30)."""
+        return self._wait_task(self.get_crawl, id, timeout, poll_interval)
 
     def rank(self, q: str, domain: str, **params: Unpack[RankParams]) -> RankResponse:
         """Position of ``domain`` (subdomains match) for ``q`` in the top ``num`` results (default 100).
@@ -838,6 +1006,24 @@ class SerpKite:
     def status(self) -> Status:
         """Public live status: requests, success rate and latency per endpoint over the last hour."""
         return Status.model_validate(self._json("GET", "/v1/status", None))
+
+    def _no_content(self, method: str, path: str) -> None:
+        response = self._send(method, path, None)
+        if response.status_code >= 400:
+            raise from_response(response)
+
+    def _wait_task(self, get: Callable[[Id], T], id: Id, timeout: float, poll_interval: float) -> T:
+        deadline = time.monotonic() + timeout
+        interval = poll_interval
+        while True:
+            task = get(id)
+            if getattr(task, "status", None) in TASK_FINAL_STATUSES:
+                return task
+            left = deadline - time.monotonic()
+            if left <= 0:
+                raise TaskTimeoutError(str(id), timeout)
+            _sleep(min(interval, left))
+            interval = next_poll(interval)
 
 
 class AsyncSerpKite:
@@ -861,6 +1047,7 @@ class AsyncSerpKite:
         self._owns_client = http_client is None
         self._http = http_client if http_client is not None else httpx.AsyncClient()
         self.batches = AsyncBatches(self)
+        self.monitors = AsyncMonitors(self)
 
     @property
     def base_url(self) -> str:
@@ -893,10 +1080,11 @@ class AsyncSerpKite:
         json: Optional[Mapping[str, Any]],
         idempotent: bool = True,
         headers: Optional[Mapping[str, str]] = None,
+        min_timeout: Optional[float] = None,
     ) -> httpx.Response:
         attempt = 0
         while True:
-            request = self._config.build(self._http, method, path, json, headers)
+            request = self._config.build(self._http, method, path, json, headers, min_timeout)
             try:
                 response = await self._http.send(request)
             except httpx.TransportError as exc:
@@ -921,8 +1109,11 @@ class AsyncSerpKite:
         json: Optional[Mapping[str, Any]],
         idempotent: bool = True,
         headers: Optional[Mapping[str, str]] = None,
+        min_timeout: Optional[float] = None,
     ) -> Any:
-        return parse_body(await self._send(method, path, json, idempotent, headers), None, None, None)
+        return parse_body(
+            await self._send(method, path, json, idempotent, headers, min_timeout), None, None, None
+        )
 
     async def _vertical(
         self,
@@ -1454,6 +1645,9 @@ class AsyncSerpKite:
         *,
         format: Literal["markdown"],
         include_html: bool = False,
+        include_links: bool = False,
+        include_images: bool = False,
+        country: Optional[str] = None,
         max_age: Optional[int] = None,
     ) -> str: ...
     @overload
@@ -1463,6 +1657,9 @@ class AsyncSerpKite:
         *,
         format: Optional[Literal["json"]] = None,
         include_html: bool = False,
+        include_links: bool = False,
+        include_images: bool = False,
+        country: Optional[str] = None,
         max_age: Optional[int] = None,
     ) -> WebpageResponse: ...
     async def webpage(
@@ -1471,16 +1668,150 @@ class AsyncSerpKite:
         *,
         format: Optional[Literal["json", "markdown"]] = None,
         include_html: bool = False,
+        include_links: bool = False,
+        include_images: bool = False,
+        country: Optional[str] = None,
         max_age: Optional[int] = None,
     ) -> Union[WebpageResponse, str]:
-        """Fetch any public URL and return clean Markdown plus metadata (1 credit).
+        """Fetch any public URL (HTML or PDF) and return clean Markdown plus metadata (1 credit).
 
         ``format="markdown"`` returns just the page Markdown as a ``str``.
+        ``include_links`` / ``include_images`` add the page's outbound links and image URLs.
+        ``country`` fetches through an exit in that country (geo-dependent pages).
         """
-        body: dict[str, Any] = {"url": url, "max_age": max_age}
+        body: dict[str, Any] = {"url": url, "country": country, "max_age": max_age}
         if include_html:
             body["include_html"] = True
+        if include_links:
+            body["include_links"] = True
+        if include_images:
+            body["include_images"] = True
         return await self._vertical("/v1/webpage", WebpageResponse, body, format, None)
+
+    async def extract(
+        self,
+        urls: Sequence[str],
+        *,
+        format: Optional[Literal["markdown", "text", "html"]] = None,
+        query: Optional[str] = None,
+        highlights: Optional[int] = None,
+        max_tokens: Optional[int] = None,
+        include_links: bool = False,
+        include_images: bool = False,
+        max_age: Optional[int] = None,
+        country: Optional[str] = None,
+        timeout: Optional[int] = None,
+    ) -> ExtractResponse:
+        """Read up to 20 URLs (HTML or PDF) as Markdown, text or HTML in one call.
+
+        ``query`` + ``highlights`` (1-10) add the passages of each page most relevant to the
+        query (BM25). 1 credit per URL that comes back (0.5 from cache); URLs that fail are
+        listed in ``failed`` and cost nothing. ``timeout`` (seconds, 1-90, default 50) reports pages
+        still loading as failed (``upstream_timeout``)."""
+        body = clean(
+            {
+                "urls": list(urls),
+                "format": format,
+                "query": query,
+                "highlights": highlights,
+                "max_tokens": max_tokens,
+                "include_links": include_links or None,
+                "include_images": include_images or None,
+                "max_age": max_age,
+                "country": country,
+                "timeout": timeout,
+            }
+        )
+        # Billed per page even when the response is lost: no retry on 5xx or a read timeout.
+        raw = await self._json(
+            "POST", "/v1/extract", body, idempotent=False, min_timeout=extract_wait(timeout)
+        )
+        return ExtractResponse.model_validate(raw)
+
+    async def map(
+        self,
+        url: str,
+        *,
+        search: Optional[str] = None,
+        limit: Optional[int] = None,
+        include_subdomains: bool = False,
+        sitemap: Optional[SitemapMode] = None,
+        include_paths: Optional[Sequence[str]] = None,
+        exclude_paths: Optional[Sequence[str]] = None,
+        ignore_query_parameters: bool = False,
+    ) -> MapResponse:
+        """The URLs of a site, from robots.txt sitemaps and the start page's links, optionally
+        ranked and filtered by ``search``. ``include_paths`` / ``exclude_paths`` are regexes
+        matched against the URL path; ``ignore_query_parameters`` folds URLs that differ only in
+        their query string. URLs come back cleaned (fragments and tracking parameters dropped)
+        and de-duplicated. 1 credit (free when nothing is found)."""
+        body = clean(
+            {
+                "url": url,
+                "search": search,
+                "limit": limit,
+                "include_subdomains": include_subdomains or None,
+                "sitemap": sitemap,
+                "include_paths": include_paths,
+                "exclude_paths": exclude_paths,
+                "ignore_query_parameters": ignore_query_parameters or None,
+            }
+        )
+        return MapResponse.model_validate(await self._json("POST", "/v1/map", body))
+
+    async def crawl(
+        self,
+        url: str,
+        *,
+        limit: Optional[int] = None,
+        max_depth: Optional[int] = None,
+        include_paths: Optional[Sequence[str]] = None,
+        exclude_paths: Optional[Sequence[str]] = None,
+        include_subdomains: bool = False,
+        sitemap: Optional[SitemapMode] = None,
+        query: Optional[str] = None,
+        ignore_query_parameters: bool = False,
+        format: Optional[Literal["markdown", "text"]] = None,
+        include_links: bool = False,
+        max_tokens: Optional[int] = None,
+        max_age: Optional[int] = None,
+        webhook_url: Optional[str] = None,
+    ) -> TaskCreated:
+        """See :meth:`SerpKite.crawl`."""
+        body = task_body(
+            {
+                "url": url,
+                "limit": limit,
+                "max_depth": max_depth,
+                "include_paths": include_paths,
+                "exclude_paths": exclude_paths,
+                "include_subdomains": include_subdomains,
+                "sitemap": sitemap,
+                "query": query,
+                "ignore_query_parameters": ignore_query_parameters,
+                "format": format,
+                "include_links": include_links,
+                "max_tokens": max_tokens,
+                "max_age": max_age,
+                "webhook_url": webhook_url,
+            }
+        )
+        return TaskCreated.model_validate(await self._json("POST", "/v1/crawl", body, idempotent=False))
+
+    async def get_crawl(self, id: Id) -> CrawlTask:
+        """Current state of a crawl (``result`` once it ends; kept 24 h)."""
+        return CrawlTask.model_validate(await self._json("GET", f"/v1/crawl/{path_id(id)}", None))
+
+    async def cancel_crawl(self, id: Id) -> TaskCancelResponse:
+        """See :meth:`SerpKite.cancel_crawl`."""
+        data = await self._json("DELETE", f"/v1/crawl/{path_id(id)}", None)
+        return TaskCancelResponse.model_validate(data)
+
+    async def wait_for_crawl(
+        self, id: Id, *, timeout: float = 2100.0, poll_interval: float = 2.0
+    ) -> CrawlTask:
+        """See :meth:`SerpKite.wait_for_crawl`."""
+        return await self._wait_task(self.get_crawl, id, timeout, poll_interval)
 
     async def rank(self, q: str, domain: str, **params: Unpack[RankParams]) -> RankResponse:
         """Position of ``domain`` (subdomains match) for ``q`` in the top ``num`` results (default 100).
@@ -1497,3 +1828,24 @@ class AsyncSerpKite:
     async def status(self) -> Status:
         """Public live status: requests, success rate and latency per endpoint over the last hour."""
         return Status.model_validate(await self._json("GET", "/v1/status", None))
+
+    async def _no_content(self, method: str, path: str) -> None:
+        response = await self._send(method, path, None)
+        if response.status_code >= 400:
+            raise from_response(response)
+
+    async def _wait_task(
+        self, get: Callable[[Id], Awaitable[T]], id: Id, timeout: float, poll_interval: float
+    ) -> T:
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        interval = poll_interval
+        while True:
+            task = await get(id)
+            if getattr(task, "status", None) in TASK_FINAL_STATUSES:
+                return task
+            left = deadline - loop.time()
+            if left <= 0:
+                raise TaskTimeoutError(str(id), timeout)
+            await _async_sleep(min(interval, left))
+            interval = next_poll(interval)

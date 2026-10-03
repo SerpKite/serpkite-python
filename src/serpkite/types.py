@@ -7,6 +7,7 @@ names (``Key``, ``Match``…); this module re-exports them under descriptive one
 
 from __future__ import annotations
 
+import datetime
 from typing import Literal, Optional, Sequence, Union
 
 from typing_extensions import TypedDict
@@ -18,14 +19,36 @@ from ._models import (
     Batch,
     BatchCreateRequest,
     BatchCreateResponse,
+    CrawlPage,
+    CrawlRequest,
+    CrawlResult,
+    CrawlTask,
     CSEResponse,
+    ExtractFailure,
+    ExtractRequest,
+    ExtractResponse,
+    ExtractResult,
+    Highlight,
     ImageResult,
     ImagesResponse,
     KnowledgeGraph,
+    MapRequest,
+    MapResponse,
+    MapURL,
     Meta,
+    Monitor,
+    MonitorCreateRequest,
+    MonitorList,
+    MonitorPageChange,
+    MonitorResultsEvent,
+    MonitorRun,
+    MonitorRunList,
+    MonitorSearch,
+    MonitorUpdateRequest,
     NewsResponse,
     NewsResult,
     OrganicResult,
+    PageLink,
     PageMetadata,
     PatentResult,
     PatentsResponse,
@@ -49,6 +72,10 @@ from ._models import (
     Sitelink,
     Status,
     Suggestion,
+    TaskCancelResponse,
+    TaskCompletedEvent,
+    TaskCreated,
+    TaskError,
     VideoResult,
     VideosResponse,
     WebpageRequest,
@@ -62,8 +89,10 @@ from ._models import Item as CSEItem
 from ._models import Key as AccountKey
 from ._models import Match as RankMatch
 from ._models import Month as AccountMonth
+from ._models import Progress as CrawlProgress
 from ._models import Response as ReviewOwnerResponse
 from ._models import SearchInformation as CSESearchInformation
+from ._models import Stats as CrawlStats
 from ._models import User as ReviewUser
 
 __all__ = [
@@ -81,17 +110,48 @@ __all__ = [
     "CSEItem",
     "CSEResponse",
     "CSESearchInformation",
+    "CrawlPage",
+    "CrawlProgress",
+    "CrawlRequest",
+    "CrawlResult",
+    "CrawlStats",
+    "CrawlStopReason",
+    "CrawlTask",
+    "DateLike",
     "Device",
+    "DomainList",
     "Engine",
     "ErrorDetail",
     "ErrorResponse",
+    "ExtractFailure",
+    "ExtractRequest",
+    "ExtractResponse",
+    "ExtractResult",
+    "Highlight",
     "ImageResult",
     "ImagesResponse",
     "KnowledgeGraph",
+    "MapRequest",
+    "MapResponse",
+    "MapURL",
     "Meta",
+    "Monitor",
+    "MonitorCreateRequest",
+    "MonitorEndpoint",
+    "MonitorInterval",
+    "MonitorList",
+    "MonitorPageChange",
+    "MonitorResultsEvent",
+    "MonitorRun",
+    "MonitorRunList",
+    "MonitorRunStatus",
+    "MonitorSearch",
+    "MonitorSearchParams",
+    "MonitorUpdateRequest",
     "NewsResponse",
     "NewsResult",
     "OrganicResult",
+    "PageLink",
     "PageMetadata",
     "PatentResult",
     "PatentsResponse",
@@ -122,12 +182,19 @@ __all__ = [
     "ShoppingResponse",
     "ShoppingResult",
     "Sitelink",
+    "SitemapMode",
     "Status",
     "StatusEndpoint",
     "Suggestion",
+    "TaskCancelResponse",
+    "TaskCompletedEvent",
+    "TaskCreated",
+    "TaskError",
+    "TaskStatus",
     "TimeRange",
     "VideoResult",
     "VideosResponse",
+    "WebhookEvent",
     "WebpageRequest",
     "WebpageResponse",
 ]
@@ -158,6 +225,23 @@ indexes in parallel, merged by URL and ranked by agreement; each result lists it
 costs the sum of one page per provider that returned results), one provider (``"brave"``) or a list
 of providers (``["google", "brave"]``). ``"auto"`` and ``"consensus"`` can't be combined with other
 names; unknown names, or a provider that doesn't serve the endpoint, are a 400."""
+SitemapMode = Literal["include", "only", "skip"]
+"""How ``map`` (and ``crawl``) use the site's sitemaps: with the start page's links, only, or not."""
+DomainList = Union[str, Sequence[str]]
+"""Domains as a list or a comma-separated string: a host, a host with a path prefix or a TLD."""
+DateLike = Union[str, datetime.date]
+"""A ``YYYY-MM-DD`` string or a ``datetime.date``."""
+MonitorEndpoint = Literal["search", "news", "webpage"]
+"""``search`` / ``news``: new results for ``q``; ``webpage``: content changes of ``url``."""
+MonitorInterval = Literal["hourly", "daily", "weekly"]
+MonitorRunStatus = Literal["ok", "error", "webhook_failed", "paused"]
+"""``MonitorRun.status`` values (models keep it a plain ``str``)."""
+CrawlStopReason = Literal["done", "limit", "time_limit", "size_limit", "too_many_failures", "canceled"]
+"""``CrawlStats.stopped`` values: why a crawl ended (models keep it a plain ``str``)."""
+TaskStatus = Literal["queued", "running", "completed", "failed", "canceled"]
+"""Task ``status`` values (models keep it a plain ``str``)."""
+WebhookEvent = Literal["batch.completed", "crawl.completed", "monitor.results"]
+"""``X-SerpKite-Event`` values."""
 BatchEndpoint = Literal[
     "search",
     "images",
@@ -210,6 +294,36 @@ class SearchParams(TypedDict, total=False):
     engine: Optional[Engine]
     """Search providers allowed to answer: ``"google"`` (default), ``"auto"``, one provider or a list.
     ``meta.engine`` names the provider that answered; credits follow its price."""
+    include_domains: Optional[DomainList]
+    """Only results from these domains (search, news, images, videos): ``example.com``,
+    ``github.com/org`` (path prefix) or ``.gov`` (TLD). At most 20. Not with ``engine="consensus"``."""
+    exclude_domains: Optional[DomainList]
+    """Drop results from these domains (search, news, images, videos)."""
+    boost_domains: Optional[DomainList]
+    """Move results from these domains to the top (search, news)."""
+    start_date: Optional[DateLike]
+    """Only results published on or after this date (``YYYY-MM-DD`` or a ``datetime.date``;
+    search, news, images, videos). Can't be combined with ``time`` or ``tbs``."""
+    end_date: Optional[DateLike]
+    """Only results published on or before this date."""
+    highlights: Optional[bool]
+    """Return query-ranked passages of the pages read by ``include_content`` instead of the
+    whole page (search only, no extra credits)."""
+
+
+class MonitorSearchParams(TypedDict, total=False):
+    """Search options a monitor saves and reruns."""
+
+    country: Optional[str]
+    language: Optional[str]
+    location: Optional[str]
+    time: Optional[TimeRange]
+    num: Optional[int]
+    device: Optional[Device]
+    safe: Optional[Literal["active", "off"]]
+    include_domains: Optional[DomainList]
+    exclude_domains: Optional[DomainList]
+    engine: Optional[Engine]
 
 
 class ReviewsParams(TypedDict, total=False):
