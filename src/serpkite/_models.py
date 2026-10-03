@@ -600,11 +600,11 @@ class SearchRequest(BaseModel):
     q: Annotated[str, Field(max_length=2048, min_length=1)]
     country: str | None = "us"
     """
-    Country code (ISO 3166-1 alpha-2)
+    Country code (ISO 3166-1 alpha-2, case-insensitive; uk is accepted as gb). When omitted and location ends in a country name, that country is used
     """
     language: str | None = "en"
     """
-    Interface language (e.g. en
+    Interface language: a language code with an optional region (e.g. en, de, pt-br, zh-tw, es-419)
     """
     location: str | None = None
     """
@@ -612,11 +612,11 @@ class SearchRequest(BaseModel):
     """
     uule: str | None = None
     """
-    Pre-encoded Google location (overrides location)
+    Pre-encoded Google location (overrides ll and location; percent-encoded values are decoded)
     """
     ll: str | None = None
     """
-    Maps viewport "@lat,lng,14z" (maps only)
+    Map point "@lat,lng,14z" (maps and places only; zoom optional): the search runs as a searcher at that point. Overrides location
     """
     num: int | None = 10
     """
@@ -625,11 +625,11 @@ class SearchRequest(BaseModel):
     page: Annotated[int | None, Field(ge=1, le=10)] = 1
     time: str | None = None
     """
-    Only results from the last hour/day/…
+    Only results from the last hour/day/… (search, news, images, videos, shopping). A fallback engine without that window is skipped, never answered unfiltered
     """
     tbs: str | None = None
     """
-    Advanced: raw Google tbs filter (e.g. qdr:d); overrides time
+    Advanced: raw Google tbs filter (e.g. qdr:d, qdr:w2, cdr:1,cd_min:1/1/2026,cd_max:1/31/2026); overrides time
     """
     device: str | None = "desktop"
     safe: str | None = "off"
