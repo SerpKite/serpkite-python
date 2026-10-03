@@ -122,8 +122,9 @@ def test_compact_and_fields_return_dict() -> None:
 def test_query_vertical_paths(method: str, path: str) -> None:
     body = search_body() if method == "search" else list_body(method, [])
     route = respx.post(f"{BASE}{path}").mock(return_value=httpx.Response(200, json=body))
-    res = getattr(SerpKite(), method)("coffee")
+    res = getattr(SerpKite(), method)("кофе", country="ru", language="ru")
     assert route.called
+    assert sent_json(route) == {"q": "кофе", "country": "ru", "language": "ru"}
     assert res.request.engine == "google"
 
 

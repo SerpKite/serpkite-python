@@ -930,8 +930,8 @@ components:
       required: [q]
       properties:
         q: { type: string, minLength: 1, maxLength: 2048 }
-        country: { type: string, default: us, description: "Country code (ISO 3166-1 alpha-2, case-insensitive; uk is accepted as gb). When omitted and location ends in a country name, that country is used" }
-        language: { type: string, default: en, description: "Interface language: a language code with an optional region (e.g. en, de, pt-br, zh-tw, es-419)" }
+        country: { type: string, default: us, description: "Country code (ISO 3166-1 alpha-2, case-insensitive; uk is accepted as gb). When omitted and location ends in a country name, that country is used. Russia (ru) uses isolated Russian proxy exits across all search verticals, including patents; those exits never serve other countries" }
+        language: { type: string, default: en, description: "Interface language: a language code with an optional region (e.g. en, ru, de, pt-br, zh-tw, es-419). Russian (ru) is supported across all search verticals; language does not change the selected country. On patents, a non-English code restricts publication language (ar, zh, da, nl, fi, fr, de, it, ja, ko, no, pt, ru, es, sv)" }
         location: { type: string, description: 'Free-text location, e.g. "Austin, Texas, United States"' }
         uule: { type: string, description: Pre-encoded Google location (overrides ll and location; percent-encoded values are decoded) }
         ll: { type: string, description: 'Map point "@lat,lng,14z" (maps and places only; zoom optional): the search runs as a searcher at that point. Overrides location' }
