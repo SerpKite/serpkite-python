@@ -22,9 +22,6 @@ from ._models import (
     ImageResult,
     ImagesResponse,
     KnowledgeGraph,
-    LensRequest,
-    LensResponse,
-    LensResult,
     Meta,
     NewsResponse,
     NewsResult,
@@ -91,10 +88,6 @@ __all__ = [
     "ImageResult",
     "ImagesResponse",
     "KnowledgeGraph",
-    "LensParams",
-    "LensRequest",
-    "LensResponse",
-    "LensResult",
     "Meta",
     "NewsResponse",
     "NewsResult",
@@ -177,7 +170,6 @@ BatchEndpoint = Literal[
     "scholar",
     "patents",
     "autocomplete",
-    "lens",
     "webpage",
 ]
 
@@ -233,12 +225,6 @@ class ReviewsParams(TypedDict, total=False):
     """``next_page_token`` from the previous page."""
     num: Optional[int]
     """Reviews per page, up to 50 (1 credit per 10)."""
-    max_age: Optional[int]
-
-
-class LensParams(TypedDict, total=False):
-    country: Optional[str]
-    language: Optional[str]
     max_age: Optional[int]
 
 

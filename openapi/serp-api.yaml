@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SerpKite SERP API
-  version: 1.0.2
+  version: 1.0.3
   description: |
     Public search API (api.serpkite.com). Google results as clean JSON or Markdown
     for AI agents, plus a Google Custom Search–compatible endpoint. Official SDKs:
@@ -42,7 +42,7 @@ info:
 
     Credit table: search/news/images/videos/maps/places/shopping/scholar/patents/
     webpage/customsearch = 1 per page; `num=100` depth bundle = 7; reviews = 1 per 10;
-    autocomplete = 0.5; lens = 2; `include_content` = +1 per fetched page;
+    autocomplete = 0.5; `include_content` = +1 per fetched page;
     batches ×0.5; cache hit via `max_age` ×0.5. `engine=consensus` (search only) =
     the sum of one page per provider that returned results.
 servers:
@@ -238,23 +238,6 @@ paths:
       requestBody: { $ref: "#/components/requestBodies/Search" }
       responses:
         "200": { $ref: "#/components/responses/AutocompleteOK" }
-        "400": { $ref: "#/components/responses/Error" }
-        "401": { $ref: "#/components/responses/Error" }
-        "402": { $ref: "#/components/responses/Error" }
-        "403": { $ref: "#/components/responses/Error" }
-        "429": { $ref: "#/components/responses/Error" }
-        "503": { $ref: "#/components/responses/Unavailable" }
-  /v1/lens:
-    post:
-      summary: Google Lens visual matches for an image URL (2 credits)
-      operationId: lens
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/LensRequest" }
-      responses:
-        "200": { $ref: "#/components/responses/LensOK" }
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Error" }
         "402": { $ref: "#/components/responses/Error" }
@@ -597,14 +580,6 @@ components:
           schema: { $ref: "#/components/schemas/AutocompleteResponse" }
         text/markdown:
           schema: { type: string }
-    LensOK:
-      description: OK (text/markdown when format=markdown)
-      headers: *billingHeaders
-      content:
-        application/json:
-          schema: { $ref: "#/components/schemas/LensResponse" }
-        text/markdown:
-          schema: { type: string }
     WebpageOK:
       description: OK (text/markdown when format=markdown)
       headers: *billingHeaders
@@ -670,17 +645,6 @@ components:
             `next_page_token` from the previous page, unchanged. Opaque and bound to the place and `sort`
             it was issued for (anything else is a 400). Paging reaches the first 100 reviews of a place per sort order.
         num: { type: integer, default: 10, maximum: 50, description: "Reviews per page (a page can be shorter when Google stops loading early; `next_page_token` then resumes after it)" }
-        format: { type: string, enum: [json, markdown, compact] }
-        fields: { type: string }
-        max_age: { type: integer }
-
-    LensRequest:
-      type: object
-      required: [url]
-      properties:
-        url: { type: string, format: uri, description: Image URL }
-        country: { type: string }
-        language: { type: string }
         format: { type: string, enum: [json, markdown, compact] }
         fields: { type: string }
         max_age: { type: integer }
@@ -756,7 +720,7 @@ components:
       required: [endpoint, engine]
       additionalProperties: true
       properties:
-        endpoint: { type: string, examples: [search, news, lens] }
+        endpoint: { type: string, examples: [search, news, webpage] }
         engine:
           description: The engine policy as asked (google, auto, one provider or a list)
           oneOf:
@@ -1063,25 +1027,6 @@ components:
         results: { type: array, items: { $ref: "#/components/schemas/Suggestion" } }
         meta: { $ref: "#/components/schemas/Meta" }
 
-    LensResult:
-      type: object
-      required: [position, title, link]
-      properties:
-        position: { type: integer }
-        title: { type: string }
-        source: { type: string }
-        link: { type: string }
-        domain: { type: string }
-        image_url: { type: string }
-        thumbnail_url: { type: string }
-    LensResponse:
-      type: object
-      required: [request, results, meta]
-      properties:
-        request: { $ref: "#/components/schemas/RequestEcho" }
-        results: { type: array, items: { $ref: "#/components/schemas/LensResult" } }
-        meta: { $ref: "#/components/schemas/Meta" }
-
     PageMetadata:
       type: object
       properties:
@@ -1194,7 +1139,7 @@ components:
       properties:
         endpoint:
           type: string
-          enum: [search, images, videos, news, maps, places, reviews, shopping, scholar, patents, autocomplete, lens, webpage]
+          enum: [search, images, videos, news, maps, places, reviews, shopping, scholar, patents, autocomplete, webpage]
         requests:
           type: array
           minItems: 1

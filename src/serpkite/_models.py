@@ -230,43 +230,6 @@ class KnowledgeGraph(BaseModel):
     attributes: dict[str, str] | None = None
 
 
-class LensRequest(BaseModel):
-    model_config = ConfigDict(
-        extra="allow",
-    )
-    url: AnyUrl
-    """
-    Image URL
-    """
-    country: str | None = None
-    language: str | None = None
-    format: str | None = None
-    fields: str | None = None
-    max_age: int | None = None
-
-
-class LensResponse(BaseModel):
-    model_config = ConfigDict(
-        extra="allow",
-    )
-    request: RequestEcho
-    results: list[LensResult]
-    meta: Meta
-
-
-class LensResult(BaseModel):
-    model_config = ConfigDict(
-        extra="allow",
-    )
-    position: int
-    title: str
-    source: str | None = None
-    link: str
-    domain: str | None = None
-    image_url: str | None = None
-    thumbnail_url: str | None = None
-
-
 class Match(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -494,7 +457,7 @@ class RequestEcho(BaseModel):
     model_config = ConfigDict(
         extra="allow",
     )
-    endpoint: Annotated[str, Field(examples=["search", "news", "lens"])]
+    endpoint: Annotated[str, Field(examples=["search", "news", "webpage"])]
     engine: str | list[str]
     """
     The engine policy as asked (google, auto, one provider or a list)

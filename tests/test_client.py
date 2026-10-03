@@ -195,10 +195,7 @@ def test_reviews_requires_an_id_and_pages() -> None:
 
 
 @respx.mock
-def test_lens_webpage_rank_account() -> None:
-    respx.post(f"{BASE}/v1/lens").mock(
-        return_value=httpx.Response(200, json=list_body("lens", [{"position": 1, "title": "t", "link": "l"}]))
-    )
+def test_webpage_rank_account() -> None:
     web = respx.post(f"{BASE}/v1/webpage").mock(
         side_effect=[
             httpx.Response(
@@ -242,8 +239,6 @@ def test_lens_webpage_rank_account() -> None:
         )
     )
     sk = SerpKite()
-
-    assert sk.lens("https://img.example/a.jpg").results[0].title == "t"
 
     page = sk.webpage("https://example.com", include_html=True)
     assert isinstance(page, WebpageResponse)

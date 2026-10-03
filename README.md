@@ -72,7 +72,6 @@ Every query vertical takes `q` plus optional keyword parameters: `country`, `lan
 | `sk.scholar(q, **params)` | `/v1/scholar` | `ScholarResponse` |
 | `sk.patents(q, **params)` | `/v1/patents` | `PatentsResponse` |
 | `sk.autocomplete(q, **params)` | `/v1/autocomplete` | `AutocompleteResponse` |
-| `sk.lens(url)` | `/v1/lens` | `LensResponse` |
 | `sk.webpage(url, include_html=False)` | `/v1/webpage` | `WebpageResponse` (`markdown`, `text`, `metadata`) |
 | `sk.rank(q, domain, num=100)` | `/v1/rank` | `RankResponse` (`position` or `None`, `matches`) |
 | `sk.account()` | `/v1/account` | `Account` (balance, limits, month usage) |

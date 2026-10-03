@@ -32,8 +32,6 @@ from .types import (
     BatchCreateResponse,
     BatchEndpoint,
     ImagesResponse,
-    LensParams,
-    LensResponse,
     NewsResponse,
     PatentsResponse,
     PlacesResponse,
@@ -791,16 +789,6 @@ class SerpKite:
         return self._vertical("/v1/autocomplete", AutocompleteResponse, {"q": q, **params}, format, fields)
 
     @overload
-    def lens(self, url: str, *, fields: str, **params: Unpack[LensParams]) -> dict[str, Any]: ...
-    @overload
-    def lens(self, url: str, *, fields: None = None, **params: Unpack[LensParams]) -> LensResponse: ...
-    def lens(
-        self, url: str, *, fields: Optional[str] = None, **params: Unpack[LensParams]
-    ) -> Union[LensResponse, dict[str, Any]]:
-        """Google Lens visual matches for a public image URL (2 credits)."""
-        return self._vertical("/v1/lens", LensResponse, {"url": url, **params}, None, fields)
-
-    @overload
     def webpage(
         self,
         url: str,
@@ -1458,16 +1446,6 @@ class AsyncSerpKite:
         return await self._vertical(
             "/v1/autocomplete", AutocompleteResponse, {"q": q, **params}, format, fields
         )
-
-    @overload
-    async def lens(self, url: str, *, fields: str, **params: Unpack[LensParams]) -> dict[str, Any]: ...
-    @overload
-    async def lens(self, url: str, *, fields: None = None, **params: Unpack[LensParams]) -> LensResponse: ...
-    async def lens(
-        self, url: str, *, fields: Optional[str] = None, **params: Unpack[LensParams]
-    ) -> Union[LensResponse, dict[str, Any]]:
-        """Google Lens visual matches for a public image URL (2 credits)."""
-        return await self._vertical("/v1/lens", LensResponse, {"url": url, **params}, None, fields)
 
     @overload
     async def webpage(
