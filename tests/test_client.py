@@ -391,7 +391,7 @@ def test_env_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_version() -> None:
-    assert serpkite.__version__ == "0.2.0"
+    assert serpkite.__version__ == "0.3.0"
 
 
 @respx.mock
