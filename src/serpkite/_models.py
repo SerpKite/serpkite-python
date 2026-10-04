@@ -1258,7 +1258,7 @@ class SearchRequest(BaseModel):
     q: Annotated[str, Field(max_length=2048, min_length=1)]
     country: str | None = "us"
     """
-    Country code (ISO 3166-1 alpha-2, case-insensitive; uk is accepted as gb). When omitted and location ends in a country name, that country is used. Russia (ru) uses isolated Russian proxy exits across all search verticals, including patents; those exits never serve other countries
+    Country code (ISO 3166-1 alpha-2, case-insensitive; uk is accepted as gb). When omitted and location ends in a country name, that country is used. Russia (ru) is supported across all search verticals, including patents, using the shared proxy routes
     """
     language: str | None = "en"
     """
