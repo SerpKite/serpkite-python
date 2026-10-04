@@ -203,7 +203,10 @@ class Monitors:
         self._client._no_content("DELETE", f"/v1/monitors/{path_id(id)}")
 
     def run(self, id: Id) -> Monitor:
-        """Run now: the monitor becomes due at the next scheduler poll (about 30 s)."""
+        """Run an active monitor at the next scheduler poll (about 30 s).
+
+        Paused monitors return 409; update(id, active=True) resumes and schedules them.
+        """
         data = self._client._json("POST", f"/v1/monitors/{path_id(id)}/run", None, idempotent=False)
         return Monitor.model_validate(data)
 
@@ -307,6 +310,10 @@ class AsyncMonitors:
         await self._client._no_content("DELETE", f"/v1/monitors/{path_id(id)}")
 
     async def run(self, id: Id) -> Monitor:
+        """Run an active monitor at the next scheduler poll (about 30 s).
+
+        Paused monitors return 409; update(id, active=True) resumes and schedules them.
+        """
         data = await self._client._json("POST", f"/v1/monitors/{path_id(id)}/run", None, idempotent=False)
         return Monitor.model_validate(data)
 
