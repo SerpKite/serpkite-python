@@ -1,6 +1,6 @@
 [project]
 name = "serpkite"
-version = "0.3.0"
+version = "0.4.0"
 description = "Official Python SDK for SerpKite, the Google search API built for AI agents: clean JSON or Markdown results."
 readme = "README.md"
 license = "MIT"
