@@ -219,7 +219,13 @@ class Endpoint(BaseModel):
     Share of requests without a 5xx (0-1)
     """
     p50_ms: int
+    """
+    Median latency of successful (non-error) responses; 0 when none succeeded
+    """
     p95_ms: int
+    """
+    95th-percentile latency of successful (non-error) responses; 0 when none succeeded
+    """
 
 
 class EngineParam1(RootModel[list[str]]):

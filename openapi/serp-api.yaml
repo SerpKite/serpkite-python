@@ -1752,8 +1752,8 @@ components:
               endpoint: { type: string }
               requests: { type: integer }
               success_rate: { type: number, description: Share of requests without a 5xx (0-1) }
-              p50_ms: { type: integer }
-              p95_ms: { type: integer }
+              p50_ms: { type: integer, description: Median latency of successful (non-error) responses; 0 when none succeeded }
+              p95_ms: { type: integer, description: 95th-percentile latency of successful (non-error) responses; 0 when none succeeded }
 
     BatchCreateRequest:
       type: object
