@@ -1040,6 +1040,22 @@ class Progress(BaseModel):
     limit: int | None = None
 
 
+class ProtectedResourceMetadata(BaseModel):
+    """
+    RFC 9728 protected resource metadata
+    """
+
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    resource: Annotated[AnyUrl, Field(examples=["https://api.serpkite.com/v1/mcp"])]
+    authorization_servers: Annotated[list[AnyUrl], Field(examples=[["https://app-api.serpkite.com"]])]
+    scopes_supported: list[str] | None = None
+    bearer_methods_supported: list[str] | None = None
+    resource_name: str | None = None
+    resource_documentation: AnyUrl | None = None
+
+
 class RankRequest(BaseModel):
     model_config = ConfigDict(
         extra="allow",

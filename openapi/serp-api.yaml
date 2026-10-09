@@ -684,6 +684,16 @@ paths:
     post:
       summary: Remote MCP server (streamable HTTP, JSON-RPC 2.0). Tools search, news, maps, scholar, webpage
       operationId: mcp
+      description: |
+        Authenticates with an API key (`Authorization: Bearer skt_live_…`) or an
+        OAuth 2.1 access token (`skt_oat_…`) issued by app-api.serpkite.com for
+        this resource (MCP authorization spec). Without a valid credential the
+        401 carries `WWW-Authenticate: Bearer resource_metadata="…/.well-known/oauth-protected-resource/v1/mcp", scope="mcp"`
+        (plus `error="invalid_token"` when a credential was rejected). OAuth
+        access tokens are only accepted here, not on the REST endpoints.
+      security:
+        - bearer: []
+        - oauth: [mcp]
       requestBody:
         required: true
         content:
@@ -696,7 +706,37 @@ paths:
             application/json:
               schema: { type: object, additionalProperties: true }
         "202": { description: Notification accepted }
-        "401": { $ref: "#/components/responses/Error" }
+        "401":
+          description: Missing, invalid, expired or revoked credential
+          headers:
+            WWW-Authenticate:
+              description: RFC 9728 challenge pointing at the protected resource metadata
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /.well-known/oauth-protected-resource/v1/mcp:
+    get:
+      summary: OAuth protected resource metadata for the MCP server (RFC 9728)
+      operationId: mcpProtectedResourceMetadata
+      security: []
+      responses:
+        "200":
+          description: Metadata
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProtectedResourceMetadata" }
+  /.well-known/oauth-protected-resource:
+    get:
+      summary: OAuth protected resource metadata (root form; same document)
+      operationId: protectedResourceMetadata
+      security: []
+      responses:
+        "200":
+          description: Metadata
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProtectedResourceMetadata" }
 
 webhooks:
   crawl.completed:
@@ -736,6 +776,17 @@ webhooks:
 components:
   securitySchemes:
     bearer: { type: http, scheme: bearer }
+    oauth:
+      type: oauth2
+      description: OAuth 2.1 for the remote MCP server only (authorization code + PKCE S256; app-api.serpkite.com is the authorization server).
+      flows:
+        authorizationCode:
+          authorizationUrl: https://app-api.serpkite.com/oauth/authorize
+          tokenUrl: https://app-api.serpkite.com/oauth/token
+          refreshUrl: https://app-api.serpkite.com/oauth/token
+          scopes:
+            mcp: Use the SerpKite MCP tools, billed to your account
+            offline_access: Stay connected with refresh tokens
 
   requestBodies:
     Search:
@@ -929,6 +980,18 @@ components:
               examples: [unauthorized, invalid_request, insufficient_credits, rate_limited, daily_limit_reached, spend_cap_reached, key_limit_reached, idempotency_key_reused, forbidden, not_found, upstream_error, upstream_blocked, upstream_timeout, unavailable, internal]
             message: { type: string }
             request_id: { type: string }
+
+    ProtectedResourceMetadata:
+      type: object
+      description: RFC 9728 protected resource metadata
+      required: [resource, authorization_servers]
+      properties:
+        resource: { type: string, format: uri, examples: ["https://api.serpkite.com/v1/mcp"] }
+        authorization_servers: { type: array, items: { type: string, format: uri }, examples: [["https://app-api.serpkite.com"]] }
+        scopes_supported: { type: array, items: { type: string } }
+        bearer_methods_supported: { type: array, items: { type: string } }
+        resource_name: { type: string }
+        resource_documentation: { type: string, format: uri }
 
     SearchRequest:
       type: object
