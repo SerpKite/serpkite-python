@@ -7,8 +7,9 @@ info:
     for AI agents, plus a Google Custom Search–compatible endpoint. Official SDKs:
     `serpkite` on npm and PyPI, `github.com/serpkite/serpkite-go`.
 
-    **Auth:** `Authorization: Bearer skt_live_…`. GET requests may pass `?api_key=`
-    instead. `/customsearch/v1` also accepts Google's `?key=`.
+    **Auth:** `Authorization: Bearer skt_live_…`. A bare `Authorization: skt_live_…`
+    (no scheme) is also accepted, for MCP hosts that can't add one. GET requests
+    may pass `?api_key=` instead. `/customsearch/v1` also accepts Google's `?key=`.
 
     **Bodies:** every vertical accepts `POST` with a JSON object or `GET` with the
     same parameters in the query string (only `GET /v1/search` is spelled out
