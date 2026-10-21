@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SerpKite SERP API
-  version: 1.5.2
+  version: 1.6.0
   description: |
     Public search API (api.serpkite.com). Google results as clean JSON or Markdown
     for AI agents, plus a Google Custom Search–compatible endpoint. Official SDKs:
@@ -43,7 +43,7 @@ info:
     and app.serpkite.com (other `Origin`s get 403).
 
     Credit table: search/news/images/videos/maps/places/shopping/scholar/patents/
-    webpage/customsearch = 1 per page; `num=100` depth bundle = 7; reviews = 1 per 10;
+    webpage/customsearch = 1 per page; place details = 1; `num=100` depth bundle = 7; reviews = 1 per 10;
     autocomplete = 0.5; `include_content` = +1 per fetched page;
     batches ×0.5; cache hit via `max_age` ×0.5. `engine=consensus` (search only) =
     the sum of one page per provider that returned results.
@@ -161,6 +161,15 @@ paths:
     post:
       summary: Google Maps search (places with coordinates). Accepts `ll` ("@lat,lng,zoomz") to search around a point
       operationId: maps
+      description: |
+        Google Maps search results: name, full address, coordinates, categories, rating, website,
+        phone, opening hours and the place's identifiers (`place_id`, `cid`, `fid`) for
+        `/v1/place` and `/v1/reviews`. Categories, addresses and hours are in `language`.
+
+        **Where:** `ll` ("@lat,lng,zoomz") searches the map at that point and zoom; `location`
+        (or `uule`) searches the named place. Without either, Google picks the area from the
+        query (an exact name or address) or from where the request comes from, so local queries
+        such as "coffee" need `location` or `ll`.
       requestBody: { $ref: "#/components/requestBodies/Search" }
       responses:
         "200": { $ref: "#/components/responses/PlacesOK" }
@@ -174,7 +183,30 @@ paths:
     post:
       summary: Google local results (places)
       operationId: places
+      description: Same results as `/v1/maps` (Google Maps search), with the same fields and location rules.
       requestBody: { $ref: "#/components/requestBodies/Search" }
+      responses:
+        "200": { $ref: "#/components/responses/PlacesOK" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "402": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /v1/place:
+    post:
+      summary: Details of one place (by `place_id`, `cid` or `fid`); 1 credit
+      operationId: place
+      description: |
+        The full Google Maps listing of one place: address, country, coordinates, time zone,
+        categories, opening hours (as text and as structured `weekly_hours`), website, phone,
+        rating, description and photos, in `language`. `results` holds the place, or is empty
+        (not charged) when no place has that identifier.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PlaceRequest" }
       responses:
         "200": { $ref: "#/components/responses/PlacesOK" }
         "400": { $ref: "#/components/responses/Error" }
@@ -682,7 +714,7 @@ paths:
 
   /v1/mcp:
     post:
-      summary: Remote MCP server (streamable HTTP, JSON-RPC 2.0). Tools search, news, maps, scholar, webpage
+      summary: Remote MCP server (streamable HTTP, JSON-RPC 2.0). Tools search, news, maps, place, scholar, webpage
       operationId: mcp
       description: |
         Authenticates with an API key (`Authorization: Bearer skt_live_…`) or an
@@ -1002,7 +1034,7 @@ components:
         language: { type: string, default: en, description: "Interface language: a language code with an optional region (e.g. en, ru, de, pt-br, zh-tw, es-419). Russian (ru) is supported across all search verticals; language does not change the selected country. On patents, a non-English code restricts publication language (ar, zh, da, nl, fi, fr, de, it, ja, ko, no, pt, ru, es, sv)" }
         location: { type: string, description: 'Free-text location, e.g. "Austin, Texas, United States"' }
         uule: { type: string, description: Pre-encoded Google location (overrides ll and location; percent-encoded values are decoded) }
-        ll: { type: string, description: 'Map point "@lat,lng,14z" (maps and places only; zoom optional): the search runs as a searcher at that point. Overrides location' }
+        ll: { type: string, description: 'Map point "@lat,lng,14z" (maps and places only; zoom optional, default 14z): the map is searched around that point at that zoom, wherever the request comes from. Overrides location' }
         num: { type: integer, default: 10, description: "10, or up to 100 for the depth bundle on search and news (7 credits for 100; values between round up to whole pages). Other verticals return one page of 10" }
         page: { type: integer, default: 1, minimum: 1, maximum: 10 }
         time: { type: string, enum: [hour, day, week, month, year], description: "Only results from the last hour/day/… (search, news, images, videos, shopping). A fallback engine without that window is skipped, never answered unfiltered" }
@@ -1059,16 +1091,37 @@ components:
         fid: { type: string }
         country: { type: string }
         language: { type: string }
-        sort: { type: string, enum: [most_relevant, newest, highest_rating, lowest_rating], default: most_relevant }
+        sort:
+          type: string
+          enum: [most_relevant, newest, highest_rating, lowest_rating]
+          default: most_relevant
+          description: >-
+            Only `most_relevant` is served: Google Maps shows other review orders only to signed-in visitors,
+            so `newest`, `highest_rating` and `lowest_rating` return 400 (not charged).
         page_token:
           type: string
           description: >-
             `next_page_token` from the previous page, unchanged. Opaque and bound to the place and `sort`
-            it was issued for (anything else is a 400). Paging reaches the first 100 reviews of a place per sort order.
-        num: { type: integer, default: 10, maximum: 50, description: "Reviews per page (a page can be shorter when Google stops loading early; `next_page_token` then resumes after it)" }
+            it was issued for (anything else is a 400). Paging reaches the first 10 reviews of a place, all
+            Google Maps shows a logged-out visitor.
+        num: { type: integer, default: 10, maximum: 50, description: "Reviews per page; a page holds at most 10 (the first 10 reviews of a place). A page can be shorter when Google stops loading early; `next_page_token` then resumes after it" }
         format: { type: string, enum: [json, markdown, compact] }
         fields: { type: string }
         max_age: { type: integer }
+
+    PlaceRequest:
+      type: object
+      description: One of place_id, cid or fid is required (place_id wins, then fid, then cid)
+      properties:
+        place_id: { type: string, description: 'Google place id ("ChIJ…"), e.g. `place_id` of a /v1/maps result' }
+        cid: { type: string, description: Decimal customer id (`cid` of a result) }
+        fid: { type: string, description: 'Feature id "0x…:0x…" (`fid` of a result)' }
+        country: { type: string, default: us, description: "Country code (ISO 3166-1 alpha-2); Google's regional view of the listing" }
+        language: { type: string, default: en, description: "Language of the address, categories, hours and description (e.g. en, ru, de)" }
+        format: { type: string, enum: [json, markdown, compact], default: json }
+        fields: { type: string }
+        max_age: { type: integer, minimum: 0, description: Accept a cached result up to this many seconds old (50% of credits on a hit) }
+        engine: { $ref: "#/components/schemas/EngineParam" }
 
     WebpageRequest:
       type: object
@@ -1580,11 +1633,57 @@ components:
         types: { type: array, items: { type: string } }
         website: { type: string }
         phone_number: { type: string }
-        opening_hours: { type: object, additionalProperties: { type: string } }
+        international_phone_number: { type: string, examples: ["+44 20 7232 3010"] }
+        opening_hours:
+          type: object
+          additionalProperties: { type: string }
+          description: 'Hours as Google displays them, keyed by English weekday (Monday … Sunday), in `language`, e.g. {"Monday": "7:30 am–6 pm", "Sunday": "Closed"}'
+        weekly_hours: { $ref: "#/components/schemas/WeeklyHours" }
+        country: { type: string, description: "ISO 3166-1 alpha-2 country code of the place, upper case (RU, GB)" }
+        timezone: { type: string, description: IANA time zone of the place (Europe/Moscow) }
+        description: { type: string, description: "Google's short description of the place, or the owner's, when Google shows one" }
+        photos:
+          type: array
+          description: Photos of the place (/v1/place; up to 10). The URLs are public and can be fetched server-side without cookies
+          items: { $ref: "#/components/schemas/PlacePhoto" }
+        google_maps_url: { type: string, description: The place on Google Maps }
         thumbnail_url: { type: string }
         place_id: { type: string }
         cid: { type: string }
         fid: { type: string }
+    WeeklyHours:
+      type: object
+      description: |
+        Opening hours per weekday, from Google's listing, as local times (`timezone`) in 24-hour HH:MM.
+        A day that is closed is an empty list; a day open 24 hours is `[{"open": "00:00", "close": "24:00"}]`;
+        a day with a break has several intervals. `close` is "24:00" at midnight, and an interval that
+        ends after midnight has `next_day: true` (e.g. 17:30–03:00). Days Google doesn't list are absent.
+      properties:
+        monday: { $ref: "#/components/schemas/HoursIntervals" }
+        tuesday: { $ref: "#/components/schemas/HoursIntervals" }
+        wednesday: { $ref: "#/components/schemas/HoursIntervals" }
+        thursday: { $ref: "#/components/schemas/HoursIntervals" }
+        friday: { $ref: "#/components/schemas/HoursIntervals" }
+        saturday: { $ref: "#/components/schemas/HoursIntervals" }
+        sunday: { $ref: "#/components/schemas/HoursIntervals" }
+    HoursIntervals:
+      type: array
+      items: { $ref: "#/components/schemas/HoursInterval" }
+    HoursInterval:
+      type: object
+      required: [open, close]
+      properties:
+        open: { type: string, pattern: "^[0-2][0-9]:[0-5][0-9]$", examples: ["08:00"] }
+        close: { type: string, pattern: "^[0-2][0-9]:[0-5][0-9]$", examples: ["22:00"] }
+        next_day: { type: boolean, description: "The interval closes after midnight, on the next day" }
+    PlacePhoto:
+      type: object
+      required: [url]
+      properties:
+        url: { type: string, description: "Image URL (at most 1600 px on the long side)" }
+        width: { type: integer }
+        height: { type: integer }
+        source: { type: string, enum: [business, visitor], description: "Who uploaded it, when Google says (Google shows no contributor names to logged-out visitors)" }
     PlacesResponse:
       type: object
       required: [request, results, meta]
@@ -1825,7 +1924,7 @@ components:
       properties:
         endpoint:
           type: string
-          enum: [search, images, videos, news, maps, places, reviews, shopping, scholar, patents, autocomplete, webpage]
+          enum: [search, images, videos, news, maps, places, place, reviews, shopping, scholar, patents, autocomplete, webpage]
         requests:
           type: array
           minItems: 1

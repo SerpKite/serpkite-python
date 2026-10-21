@@ -29,6 +29,7 @@ from ._models import (
     ExtractResponse,
     ExtractResult,
     Highlight,
+    HoursInterval,
     ImageResult,
     ImagesResponse,
     KnowledgeGraph,
@@ -53,6 +54,8 @@ from ._models import (
     PatentResult,
     PatentsResponse,
     PeopleAlsoAsk,
+    PlacePhoto,
+    PlaceRequest,
     PlaceResult,
     PlacesResponse,
     RankRequest,
@@ -80,6 +83,7 @@ from ._models import (
     VideosResponse,
     WebpageRequest,
     WebpageResponse,
+    WeeklyHours,
 )
 from ._models import Endpoint as StatusEndpoint
 from ._models import Error as ErrorResponse
@@ -128,6 +132,7 @@ __all__ = [
     "ExtractResponse",
     "ExtractResult",
     "Highlight",
+    "HoursInterval",
     "ImageResult",
     "ImagesResponse",
     "KnowledgeGraph",
@@ -156,6 +161,9 @@ __all__ = [
     "PatentResult",
     "PatentsResponse",
     "PeopleAlsoAsk",
+    "PlaceParams",
+    "PlacePhoto",
+    "PlaceRequest",
     "PlaceResult",
     "PlacesResponse",
     "Provider",
@@ -197,6 +205,7 @@ __all__ = [
     "WebhookEvent",
     "WebpageRequest",
     "WebpageResponse",
+    "WeeklyHours",
 ]
 
 TimeRange = Literal["hour", "day", "week", "month", "year"]
@@ -249,6 +258,7 @@ BatchEndpoint = Literal[
     "news",
     "maps",
     "places",
+    "place",
     "reviews",
     "shopping",
     "scholar",
@@ -335,11 +345,30 @@ class ReviewsParams(TypedDict, total=False):
     country: Optional[str]
     language: Optional[str]
     sort: Optional[ReviewsSort]
+    """Only ``most_relevant`` is served; other orders return 400 (Google shows them only to
+    signed-in visitors)."""
     page_token: Optional[str]
     """``next_page_token`` from the previous page."""
     num: Optional[int]
-    """Reviews per page, up to 50 (1 credit per 10)."""
+    """Reviews per page (1 credit per 10); at most 10, the first 10 reviews of a place being
+    all Google shows."""
     max_age: Optional[int]
+
+
+class PlaceParams(TypedDict, total=False):
+    """Place details parameters. Pass one of ``place_id``, ``cid`` or ``fid`` (``place_id`` wins,
+    then ``fid``, then ``cid``)."""
+
+    place_id: Optional[str]
+    cid: Optional[str]
+    fid: Optional[str]
+    country: Optional[str]
+    """Country code (ISO 3166-1 alpha-2), default ``us``: Google's regional view of the listing."""
+    language: Optional[str]
+    """Language of the address, categories, hours and description, default ``en``."""
+    max_age: Optional[int]
+    """Accept a cached result up to this many seconds old (50% of credits on a hit)."""
+    engine: Optional[Engine]
 
 
 class RankParams(TypedDict, total=False):

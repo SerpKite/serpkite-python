@@ -9,7 +9,13 @@ import respx
 from typing_extensions import assert_type
 
 from serpkite import AsyncSerpKite, SerpKite
-from serpkite.types import NewsResponse, ReviewsResponse, SearchResponse, WebpageResponse
+from serpkite.types import (
+    NewsResponse,
+    PlacesResponse,
+    ReviewsResponse,
+    SearchResponse,
+    WebpageResponse,
+)
 
 from .helpers import BASE, list_body, search_body
 
@@ -18,6 +24,7 @@ from .helpers import BASE, list_body, search_body
 async def test_overload_return_types() -> None:
     respx.post(f"{BASE}/v1/search").mock(return_value=httpx.Response(200, json=search_body()))
     respx.post(f"{BASE}/v1/news").mock(return_value=httpx.Response(200, json=list_body("news", [])))
+    respx.post(f"{BASE}/v1/place").mock(return_value=httpx.Response(200, json=list_body("place", [])))
     respx.post(f"{BASE}/v1/webpage").mock(
         return_value=httpx.Response(200, text="# x", headers={"content-type": "text/markdown"})
     )
@@ -30,6 +37,7 @@ async def test_overload_return_types() -> None:
     ask = AsyncSerpKite()
     assert_type(await ask.search("q"), SearchResponse)
     assert_type(await ask.news("q"), NewsResponse)
+    assert_type(await ask.place(place_id="ChIJ"), PlacesResponse)
     await ask.close()
 
 
@@ -40,6 +48,8 @@ def _type_only_checks(sk: SerpKite) -> None:
     assert_type(sk.search("q", fields="results.title"), dict[str, Any])
     assert_type(sk.search("q", format="markdown", fields="results.title"), str)
     assert_type(sk.reviews(place_id="x"), ReviewsResponse)
+    assert_type(sk.place(cid="1"), PlacesResponse)
+    assert_type(sk.place(fid="0x1:0x2", format="markdown"), str)
     assert_type(sk.webpage("https://example.com"), WebpageResponse)
     assert_type(sk.search("q", engine="auto"), SearchResponse)
     assert_type(sk.news("q", engine=["google", "brave"]), NewsResponse)
