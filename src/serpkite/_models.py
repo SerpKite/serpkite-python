@@ -409,6 +409,18 @@ class Highlight(BaseModel):
     """
 
 
+class HoursInterval(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    open: Annotated[str, Field(examples=["08:00"], pattern="^[0-2][0-9]:[0-5][0-9]$")]
+    close: Annotated[str, Field(examples=["22:00"], pattern="^[0-2][0-9]:[0-5][0-9]$")]
+    next_day: bool | None = None
+    """
+    The interval closes after midnight, on the next day
+    """
+
+
 class ImageResult(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -997,6 +1009,62 @@ class PeopleAlsoAsk(BaseModel):
     link: str | None = None
 
 
+class PlacePhoto(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    url: str
+    """
+    Image URL (at most 1600 px on the long side)
+    """
+    width: int | None = None
+    height: int | None = None
+    source: str | None = None
+    """
+    Who uploaded it, when Google says (Google shows no contributor names to logged-out visitors)
+    """
+
+
+class PlaceRequest(BaseModel):
+    """
+    One of place_id, cid or fid is required (place_id wins, then fid, then cid)
+    """
+
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    place_id: str | None = None
+    """
+    Google place id ("ChIJ…"), e.g. `place_id` of a /v1/maps result
+    """
+    cid: str | None = None
+    """
+    Decimal customer id (`cid` of a result)
+    """
+    fid: str | None = None
+    """
+    Feature id "0x…:0x…" (`fid` of a result)
+    """
+    country: str | None = "us"
+    """
+    Country code (ISO 3166-1 alpha-2); Google's regional view of the listing
+    """
+    language: str | None = "en"
+    """
+    Language of the address, categories, hours and description (e.g. en, ru, de)
+    """
+    format: str | None = "json"
+    fields: str | None = None
+    max_age: Annotated[int | None, Field(ge=0)] = None
+    """
+    Accept a cached result up to this many seconds old (50% of credits on a hit)
+    """
+    engine: str | EngineParam1 | None = None
+    """
+    Which search providers may answer. `google` (the default) is Google only; within Google, SerpKite always fails over across its own proxy pools. `auto` allows falling back to other enabled providers, in route order, when Google is blocked or times out. A single other provider (`brave`) or a list (`["google","brave"]`, or `google,brave` in a query string) restricts the request to those providers. `meta.engine` always names the provider that answered and credits follow that provider's price. A key with "Allow fallback to other search engines" on treats a request without `engine` as `auto`. `consensus` (`/v1/search` only; 400 elsewhere, and it can't be combined with other names) queries several independent search indexes in parallel (at most one Bing-backed provider, so Yahoo or DuckDuckGo never count as agreeing with Bing), merges the results by URL and ranks them by how many providers returned each one. Each result lists its `sources`; `meta.engine` is `consensus` and `meta.route` lists every provider attempt. It stops once `num` unique results are in hand or after a few seconds, and costs the sum of one page at each provider that returned results (providers that failed, came back empty or were never started are free).
+    """
+
+
 class PlaceResult(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -1013,7 +1081,32 @@ class PlaceResult(BaseModel):
     types: list[str] | None = None
     website: str | None = None
     phone_number: str | None = None
+    international_phone_number: Annotated[str | None, Field(examples=["+44 20 7232 3010"])] = None
     opening_hours: dict[str, str] | None = None
+    """
+    Hours as Google displays them, keyed by English weekday (Monday … Sunday), in `language`, e.g. {"Monday": "7:30 am–6 pm", "Sunday": "Closed"}
+    """
+    weekly_hours: WeeklyHours | None = None
+    country: str | None = None
+    """
+    ISO 3166-1 alpha-2 country code of the place, upper case (RU, GB)
+    """
+    timezone: str | None = None
+    """
+    IANA time zone of the place (Europe/Moscow)
+    """
+    description: str | None = None
+    """
+    Google's short description of the place, or the owner's, when Google shows one
+    """
+    photos: list[PlacePhoto] | None = None
+    """
+    Photos of the place (/v1/place; up to 10). The URLs are public and can be fetched server-side without cookies
+    """
+    google_maps_url: str | None = None
+    """
+    The place on Google Maps
+    """
     thumbnail_url: str | None = None
     place_id: str | None = None
     cid: str | None = None
@@ -1196,13 +1289,16 @@ class ReviewsRequest(BaseModel):
     country: str | None = None
     language: str | None = None
     sort: str | None = "most_relevant"
+    """
+    Only `most_relevant` is served: Google Maps shows other review orders only to signed-in visitors, so `newest`, `highest_rating` and `lowest_rating` return 400 (not charged).
+    """
     page_token: str | None = None
     """
-    `next_page_token` from the previous page, unchanged. Opaque and bound to the place and `sort` it was issued for (anything else is a 400). Paging reaches the first 100 reviews of a place per sort order.
+    `next_page_token` from the previous page, unchanged. Opaque and bound to the place and `sort` it was issued for (anything else is a 400). Paging reaches the first 10 reviews of a place, all Google Maps shows a logged-out visitor.
     """
     num: Annotated[int | None, Field(le=50)] = 10
     """
-    Reviews per page (a page can be shorter when Google stops loading early; `next_page_token` then resumes after it)
+    Reviews per page; a page holds at most 10 (the first 10 reviews of a place). A page can be shorter when Google stops loading early; `next_page_token` then resumes after it
     """
     format: str | None = None
     fields: str | None = None
@@ -1296,7 +1392,7 @@ class SearchRequest(BaseModel):
     """
     ll: str | None = None
     """
-    Map point "@lat,lng,14z" (maps and places only; zoom optional): the search runs as a searcher at that point. Overrides location
+    Map point "@lat,lng,14z" (maps and places only; zoom optional, default 14z): the map is searched around that point at that zoom, wherever the request comes from. Overrides location
     """
     num: int | None = 10
     """
@@ -1628,3 +1724,24 @@ class WebpageResponse(BaseModel):
     include_images=true only. Image URLs in document order
     """
     meta: Meta2
+
+
+class WeeklyHours(BaseModel):
+    """
+    Opening hours per weekday, from Google's listing, as local times (`timezone`) in 24-hour HH:MM.
+    A day that is closed is an empty list; a day open 24 hours is `[{"open": "00:00", "close": "24:00"}]`;
+    a day with a break has several intervals. `close` is "24:00" at midnight, and an interval that
+    ends after midnight has `next_day: true` (e.g. 17:30–03:00). Days Google doesn't list are absent.
+
+    """
+
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    monday: list[HoursInterval] | None = None
+    tuesday: list[HoursInterval] | None = None
+    wednesday: list[HoursInterval] | None = None
+    thursday: list[HoursInterval] | None = None
+    friday: list[HoursInterval] | None = None
+    saturday: list[HoursInterval] | None = None
+    sunday: list[HoursInterval] | None = None

@@ -67,6 +67,7 @@ Every query vertical takes `q` plus optional keyword parameters: `country`, `lan
 | `sk.news(q, **params)` | `/v1/news` | `NewsResponse` |
 | `sk.maps(q, ll="@40.7,-74.0,14z", **params)` | `/v1/maps` | `PlacesResponse` |
 | `sk.places(q, **params)` | `/v1/places` | `PlacesResponse` |
+| `sk.place(place_id=… \| cid=… \| fid=…, country=, language=)` | `/v1/place` | `PlacesResponse` (one place, or empty) |
 | `sk.reviews(place_id=… \| cid=… \| fid=…, sort=, page_token=, num=)` | `/v1/reviews` | `ReviewsResponse` |
 | `sk.shopping(q, **params)` | `/v1/shopping` | `ShoppingResponse` |
 | `sk.scholar(q, **params)` | `/v1/scholar` | `ScholarResponse` |
@@ -100,8 +101,12 @@ res = sk.search("vector databases comparison", include_content=5)
 for r in res.results:
     print(r.title, len(r.content or ""))
 
-# Reviews, paged
-page = sk.reviews(place_id="ChIJN1t_tDeuEmsRUsoyG83frY4", sort="newest")
+# One place in full: structured hours, phones, time zone, photos
+p = sk.place(place_id="ChIJN1t_tDeuEmsRUsoyG83frY4").results[0]
+print(p.timezone, p.weekly_hours.monday if p.weekly_hours else None)  # [HoursInterval(open='09:00', ...)]
+
+# Reviews, paged (the first 10 of a place)
+page = sk.reviews(place_id="ChIJN1t_tDeuEmsRUsoyG83frY4", num=5)
 nxt = sk.reviews(place_id="ChIJN1t_tDeuEmsRUsoyG83frY4", page_token=page.next_page_token)
 
 # Where does example.com rank?

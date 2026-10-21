@@ -45,6 +45,7 @@ from .types import (
     MapResponse,
     NewsResponse,
     PatentsResponse,
+    PlaceParams,
     PlacesResponse,
     RankParams,
     RankResponse,
@@ -583,6 +584,46 @@ class SerpKite:
         return a plain ``dict``; otherwise a typed model.
         """
         return self._vertical("/v1/places", PlacesResponse, {"q": q, **params}, format, fields)
+
+    @overload
+    def place(
+        self, *, format: Literal["markdown"], fields: Optional[str] = None, **params: Unpack[PlaceParams]
+    ) -> str: ...
+    @overload
+    def place(
+        self, *, format: Literal["compact"], fields: Optional[str] = None, **params: Unpack[PlaceParams]
+    ) -> dict[str, Any]: ...
+    @overload
+    def place(
+        self, *, format: Optional[Literal["json"]] = None, fields: str, **params: Unpack[PlaceParams]
+    ) -> dict[str, Any]: ...
+    @overload
+    def place(
+        self,
+        *,
+        format: Optional[Literal["json"]] = None,
+        fields: None = None,
+        **params: Unpack[PlaceParams],
+    ) -> PlacesResponse: ...
+    def place(
+        self,
+        *,
+        format: Optional[Format] = None,
+        fields: Optional[str] = None,
+        **params: Unpack[PlaceParams],
+    ) -> Union[PlacesResponse, str, dict[str, Any]]:
+        """Details of one place, by ``place_id``, ``cid`` or ``fid`` (1 credit).
+
+        ``results`` holds the place (address, country, time zone, ``opening_hours`` and structured
+        ``weekly_hours``, phones, description, photos), or is empty (not charged) when no place
+        has that id.
+
+        ``format="markdown"`` returns a Markdown ``str``; ``format="compact"`` or ``fields=...``
+        return a plain ``dict``; otherwise a typed model.
+        """
+        if not (params.get("place_id") or params.get("cid") or params.get("fid")):
+            raise ValueError("place() needs one of place_id=, cid= or fid=")
+        return self._vertical("/v1/place", PlacesResponse, dict(params), format, fields)
 
     @overload
     def reviews(
@@ -1413,6 +1454,46 @@ class AsyncSerpKite:
         return a plain ``dict``; otherwise a typed model.
         """
         return await self._vertical("/v1/places", PlacesResponse, {"q": q, **params}, format, fields)
+
+    @overload
+    async def place(
+        self, *, format: Literal["markdown"], fields: Optional[str] = None, **params: Unpack[PlaceParams]
+    ) -> str: ...
+    @overload
+    async def place(
+        self, *, format: Literal["compact"], fields: Optional[str] = None, **params: Unpack[PlaceParams]
+    ) -> dict[str, Any]: ...
+    @overload
+    async def place(
+        self, *, format: Optional[Literal["json"]] = None, fields: str, **params: Unpack[PlaceParams]
+    ) -> dict[str, Any]: ...
+    @overload
+    async def place(
+        self,
+        *,
+        format: Optional[Literal["json"]] = None,
+        fields: None = None,
+        **params: Unpack[PlaceParams],
+    ) -> PlacesResponse: ...
+    async def place(
+        self,
+        *,
+        format: Optional[Format] = None,
+        fields: Optional[str] = None,
+        **params: Unpack[PlaceParams],
+    ) -> Union[PlacesResponse, str, dict[str, Any]]:
+        """Details of one place, by ``place_id``, ``cid`` or ``fid`` (1 credit).
+
+        ``results`` holds the place (address, country, time zone, ``opening_hours`` and structured
+        ``weekly_hours``, phones, description, photos), or is empty (not charged) when no place
+        has that id.
+
+        ``format="markdown"`` returns a Markdown ``str``; ``format="compact"`` or ``fields=...``
+        return a plain ``dict``; otherwise a typed model.
+        """
+        if not (params.get("place_id") or params.get("cid") or params.get("fid")):
+            raise ValueError("place() needs one of place_id=, cid= or fid=")
+        return await self._vertical("/v1/place", PlacesResponse, dict(params), format, fields)
 
     @overload
     async def reviews(

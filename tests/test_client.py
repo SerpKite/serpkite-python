@@ -29,6 +29,7 @@ from serpkite.types import (
     MapResponse,
     NewsResponse,
     OrganicResult,
+    PlacesResponse,
     RankResponse,
     ReviewsResponse,
     RouteStep,
@@ -197,6 +198,37 @@ def test_reviews_requires_an_id_and_pages() -> None:
     assert isinstance(res, ReviewsResponse)
     assert res.next_page_token == "tok2"
     assert sent_json(route) == {"place_id": "ChIJ123", "sort": "newest", "page_token": "tok1"}
+
+
+@respx.mock
+def test_place_requires_an_id_and_types_details() -> None:
+    place = {
+        "position": 1,
+        "title": "Ronnie Scott's",
+        "international_phone_number": "+44 20 7439 0747",
+        "country": "GB",
+        "timezone": "Europe/London",
+        "weekly_hours": {"monday": [{"open": "18:00", "close": "03:00", "next_day": True}], "sunday": []},
+        "photos": [{"url": "https://lh5.googleusercontent.com/p/x", "width": 1600, "source": "business"}],
+        "google_maps_url": "https://www.google.com/maps/place/?q=place_id:ChIJ123",
+        "place_id": "ChIJ123",
+    }
+    route = respx.post(f"{BASE}/v1/place").mock(
+        return_value=httpx.Response(200, json=list_body("place", [place]))
+    )
+    sk = SerpKite()
+    with pytest.raises(ValueError):
+        sk.place(language="en")
+    res = sk.place(place_id="ChIJ123", language="en")
+    assert isinstance(res, PlacesResponse)
+    assert sent_json(route) == {"place_id": "ChIJ123", "language": "en"}
+    hours = res.results[0].weekly_hours
+    assert hours is not None and hours.monday is not None
+    assert (hours.monday[0].open, hours.monday[0].close, hours.monday[0].next_day) == ("18:00", "03:00", True)
+    assert hours.sunday == [] and hours.tuesday is None
+    photos = res.results[0].photos or []
+    assert [(p.url, p.source) for p in photos] == [("https://lh5.googleusercontent.com/p/x", "business")]
+    assert res.results[0].timezone == "Europe/London"
 
 
 @respx.mock
