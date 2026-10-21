@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SerpKite SERP API
-  version: 1.6.0
+  version: 1.7.0
   description: |
     Public search API (api.serpkite.com). Google results as clean JSON or Markdown
     for AI agents, plus a Google Custom Search–compatible endpoint. Official SDKs:
@@ -170,6 +170,13 @@ paths:
         (or `uule`) searches the named place. Without either, Google picks the area from the
         query (an exact name or address) or from where the request comes from, so local queries
         such as "coffee" need `location` or `ll`.
+
+        **Yandex Maps:** with `engine=yandex` (where the deployment enables it) the results come
+        from Yandex Maps, which covers Russia and the CIS in depth. They have the same fields,
+        with the Yandex organisation id in `oid` (for `/v1/place`) and `yandex_maps_url` instead
+        of Google's identifiers; categories, addresses and hours follow `language` (`ru` for
+        Russian). Pass `ll` or a `location` (a city, appended to the query); `uule` and `tbs`
+        are refused.
       requestBody: { $ref: "#/components/requestBodies/Search" }
       responses:
         "200": { $ref: "#/components/responses/PlacesOK" }
@@ -195,13 +202,18 @@ paths:
         "503": { $ref: "#/components/responses/Unavailable" }
   /v1/place:
     post:
-      summary: Details of one place (by `place_id`, `cid` or `fid`); 1 credit
+      summary: Details of one place (by `place_id`, `cid`, `fid` or Yandex `oid`); 1 credit
       operationId: place
       description: |
         The full Google Maps listing of one place: address, country, coordinates, time zone,
         categories, opening hours (as text and as structured `weekly_hours`), website, phone,
         rating, description and photos, in `language`. `results` holds the place, or is empty
         (not charged) when no place has that identifier.
+
+        With `oid` (a Yandex Maps organisation id, e.g. from an `engine=yandex` maps result or
+        `yandex.ru/maps/org/<name>/<oid>/`) the listing comes from Yandex Maps, where the
+        deployment enables it: `oid` implies `engine=yandex` and can't be combined with Google's
+        identifiers. Closed listings (temporarily or permanently) carry no hours.
       requestBody:
         required: true
         content:
@@ -1111,11 +1123,20 @@ components:
 
     PlaceRequest:
       type: object
-      description: One of place_id, cid or fid is required (place_id wins, then fid, then cid)
+      description: >-
+        One of place_id, cid or fid (Google; place_id wins, then fid, then cid) or oid (Yandex Maps)
+        is required
       properties:
         place_id: { type: string, description: 'Google place id ("ChIJ…"), e.g. `place_id` of a /v1/maps result' }
         cid: { type: string, description: Decimal customer id (`cid` of a result) }
         fid: { type: string, description: 'Feature id "0x…:0x…" (`fid` of a result)' }
+        oid:
+          type: string
+          pattern: "^[0-9]{1,20}$"
+          examples: ["1045821788"]
+          description: >-
+            Yandex Maps organisation id (`oid` of an `engine=yandex` maps result). Implies
+            `engine=yandex`; not with place_id, cid or fid
         country: { type: string, default: us, description: "Country code (ISO 3166-1 alpha-2); Google's regional view of the listing" }
         language: { type: string, default: en, description: "Language of the address, categories, hours and description (e.g. en, ru, de)" }
         format: { type: string, enum: [json, markdown, compact], default: json }
@@ -1377,7 +1398,7 @@ components:
     Provider:
       type: string
       description: A search provider (docs/providers). Which verticals each serves depends on the deployment.
-      enum: [google, brave, bing, yahoo, duckduckgo, mojeek, wikipedia]
+      enum: [google, brave, bing, yahoo, duckduckgo, mojeek, wikipedia, yandex]
 
     EngineParam:
       description: >-
@@ -1394,6 +1415,8 @@ components:
         `meta.route` lists every provider attempt. It stops once `num` unique results are in hand or after
         a few seconds, and costs the sum of one page at each provider that returned results (providers that
         failed, came back empty or were never started are free).
+        `yandex` serves `/v1/maps`, `/v1/places` and `/v1/place` from Yandex Maps where the deployment
+        enables it (otherwise a 503 `unavailable`, not charged); with `auto` it is the last fallback there.
       oneOf:
         - type: string
           default: google
@@ -1458,6 +1481,7 @@ components:
         place_id: { type: string }
         cid: { type: string }
         fid: { type: string }
+        oid: { type: string }
         sort: { type: string }
         include_content: { type: integer }
         format: { type: string }
@@ -1637,11 +1661,11 @@ components:
         opening_hours:
           type: object
           additionalProperties: { type: string }
-          description: 'Hours as Google displays them, keyed by English weekday (Monday … Sunday), in `language`, e.g. {"Monday": "7:30 am–6 pm", "Sunday": "Closed"}'
+          description: 'Hours as the provider displays them, keyed by English weekday (Monday … Sunday), in `language`, e.g. {"Monday": "7:30 am–6 pm", "Sunday": "Closed"}; Yandex Maps: 24-hour times ("08:00–22:00"), "Closed"/"выходной", "Open 24 hours"/"круглосуточно"'
         weekly_hours: { $ref: "#/components/schemas/WeeklyHours" }
         country: { type: string, description: "ISO 3166-1 alpha-2 country code of the place, upper case (RU, GB)" }
         timezone: { type: string, description: IANA time zone of the place (Europe/Moscow) }
-        description: { type: string, description: "Google's short description of the place, or the owner's, when Google shows one" }
+        description: { type: string, description: "Google's short description of the place, or the owner's, when Google shows one; Yandex Maps' summary of the place when it has one" }
         photos:
           type: array
           description: Photos of the place (/v1/place; up to 10). The URLs are public and can be fetched server-side without cookies
@@ -1651,13 +1675,16 @@ components:
         place_id: { type: string }
         cid: { type: string }
         fid: { type: string }
+        oid: { type: string, description: "Yandex Maps organisation id (engine=yandex), for /v1/place" }
+        yandex_maps_url: { type: string, description: "The place on Yandex Maps (engine=yandex): https://yandex.ru/maps/org/<oid>/" }
     WeeklyHours:
       type: object
       description: |
-        Opening hours per weekday, from Google's listing, as local times (`timezone`) in 24-hour HH:MM.
+        Opening hours per weekday, from the provider's listing, as local times (`timezone`) in 24-hour HH:MM.
         A day that is closed is an empty list; a day open 24 hours is `[{"open": "00:00", "close": "24:00"}]`;
         a day with a break has several intervals. `close` is "24:00" at midnight, and an interval that
-        ends after midnight has `next_day: true` (e.g. 17:30–03:00). Days Google doesn't list are absent.
+        ends after midnight has `next_day: true` (e.g. 17:30–03:00). Days Google doesn't list are absent;
+        Yandex Maps lists all seven or none.
       properties:
         monday: { $ref: "#/components/schemas/HoursIntervals" }
         tuesday: { $ref: "#/components/schemas/HoursIntervals" }

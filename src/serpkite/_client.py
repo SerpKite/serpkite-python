@@ -612,7 +612,8 @@ class SerpKite:
         fields: Optional[str] = None,
         **params: Unpack[PlaceParams],
     ) -> Union[PlacesResponse, str, dict[str, Any]]:
-        """Details of one place, by ``place_id``, ``cid`` or ``fid`` (1 credit).
+        """Details of one place, by ``place_id``, ``cid`` or ``fid``, or by a Yandex Maps ``oid``
+        (which implies ``engine="yandex"``) (1 credit).
 
         ``results`` holds the place (address, country, time zone, ``opening_hours`` and structured
         ``weekly_hours``, phones, description, photos), or is empty (not charged) when no place
@@ -621,8 +622,8 @@ class SerpKite:
         ``format="markdown"`` returns a Markdown ``str``; ``format="compact"`` or ``fields=...``
         return a plain ``dict``; otherwise a typed model.
         """
-        if not (params.get("place_id") or params.get("cid") or params.get("fid")):
-            raise ValueError("place() needs one of place_id=, cid= or fid=")
+        if not (params.get("place_id") or params.get("cid") or params.get("fid") or params.get("oid")):
+            raise ValueError("place() needs one of place_id=, cid=, fid= or oid=")
         return self._vertical("/v1/place", PlacesResponse, dict(params), format, fields)
 
     @overload
@@ -1482,7 +1483,8 @@ class AsyncSerpKite:
         fields: Optional[str] = None,
         **params: Unpack[PlaceParams],
     ) -> Union[PlacesResponse, str, dict[str, Any]]:
-        """Details of one place, by ``place_id``, ``cid`` or ``fid`` (1 credit).
+        """Details of one place, by ``place_id``, ``cid`` or ``fid``, or by a Yandex Maps ``oid``
+        (which implies ``engine="yandex"``) (1 credit).
 
         ``results`` holds the place (address, country, time zone, ``opening_hours`` and structured
         ``weekly_hours``, phones, description, photos), or is empty (not charged) when no place
@@ -1491,8 +1493,8 @@ class AsyncSerpKite:
         ``format="markdown"`` returns a Markdown ``str``; ``format="compact"`` or ``fields=...``
         return a plain ``dict``; otherwise a typed model.
         """
-        if not (params.get("place_id") or params.get("cid") or params.get("fid")):
-            raise ValueError("place() needs one of place_id=, cid= or fid=")
+        if not (params.get("place_id") or params.get("cid") or params.get("fid") or params.get("oid")):
+            raise ValueError("place() needs one of place_id=, cid=, fid= or oid=")
         return await self._vertical("/v1/place", PlacesResponse, dict(params), format, fields)
 
     @overload

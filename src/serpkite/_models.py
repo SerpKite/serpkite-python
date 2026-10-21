@@ -231,7 +231,7 @@ class Endpoint(BaseModel):
 class EngineParam1(RootModel[list[str]]):
     root: Annotated[list[str], Field(min_length=1)]
     """
-    Which search providers may answer. `google` (the default) is Google only; within Google, SerpKite always fails over across its own proxy pools. `auto` allows falling back to other enabled providers, in route order, when Google is blocked or times out. A single other provider (`brave`) or a list (`["google","brave"]`, or `google,brave` in a query string) restricts the request to those providers. `meta.engine` always names the provider that answered and credits follow that provider's price. A key with "Allow fallback to other search engines" on treats a request without `engine` as `auto`. `consensus` (`/v1/search` only; 400 elsewhere, and it can't be combined with other names) queries several independent search indexes in parallel (at most one Bing-backed provider, so Yahoo or DuckDuckGo never count as agreeing with Bing), merges the results by URL and ranks them by how many providers returned each one. Each result lists its `sources`; `meta.engine` is `consensus` and `meta.route` lists every provider attempt. It stops once `num` unique results are in hand or after a few seconds, and costs the sum of one page at each provider that returned results (providers that failed, came back empty or were never started are free).
+    Which search providers may answer. `google` (the default) is Google only; within Google, SerpKite always fails over across its own proxy pools. `auto` allows falling back to other enabled providers, in route order, when Google is blocked or times out. A single other provider (`brave`) or a list (`["google","brave"]`, or `google,brave` in a query string) restricts the request to those providers. `meta.engine` always names the provider that answered and credits follow that provider's price. A key with "Allow fallback to other search engines" on treats a request without `engine` as `auto`. `consensus` (`/v1/search` only; 400 elsewhere, and it can't be combined with other names) queries several independent search indexes in parallel (at most one Bing-backed provider, so Yahoo or DuckDuckGo never count as agreeing with Bing), merges the results by URL and ranks them by how many providers returned each one. Each result lists its `sources`; `meta.engine` is `consensus` and `meta.route` lists every provider attempt. It stops once `num` unique results are in hand or after a few seconds, and costs the sum of one page at each provider that returned results (providers that failed, came back empty or were never started are free). `yandex` serves `/v1/maps`, `/v1/places` and `/v1/place` from Yandex Maps where the deployment enables it (otherwise a 503 `unavailable`, not charged); with `auto` it is the last fallback there.
     """
 
 
@@ -675,7 +675,7 @@ class MonitorCreateRequest(BaseModel):
     """
     engine: str | EngineParam1 | None = None
     """
-    Which search providers may answer. `google` (the default) is Google only; within Google, SerpKite always fails over across its own proxy pools. `auto` allows falling back to other enabled providers, in route order, when Google is blocked or times out. A single other provider (`brave`) or a list (`["google","brave"]`, or `google,brave` in a query string) restricts the request to those providers. `meta.engine` always names the provider that answered and credits follow that provider's price. A key with "Allow fallback to other search engines" on treats a request without `engine` as `auto`. `consensus` (`/v1/search` only; 400 elsewhere, and it can't be combined with other names) queries several independent search indexes in parallel (at most one Bing-backed provider, so Yahoo or DuckDuckGo never count as agreeing with Bing), merges the results by URL and ranks them by how many providers returned each one. Each result lists its `sources`; `meta.engine` is `consensus` and `meta.route` lists every provider attempt. It stops once `num` unique results are in hand or after a few seconds, and costs the sum of one page at each provider that returned results (providers that failed, came back empty or were never started are free).
+    Which search providers may answer. `google` (the default) is Google only; within Google, SerpKite always fails over across its own proxy pools. `auto` allows falling back to other enabled providers, in route order, when Google is blocked or times out. A single other provider (`brave`) or a list (`["google","brave"]`, or `google,brave` in a query string) restricts the request to those providers. `meta.engine` always names the provider that answered and credits follow that provider's price. A key with "Allow fallback to other search engines" on treats a request without `engine` as `auto`. `consensus` (`/v1/search` only; 400 elsewhere, and it can't be combined with other names) queries several independent search indexes in parallel (at most one Bing-backed provider, so Yahoo or DuckDuckGo never count as agreeing with Bing), merges the results by URL and ranks them by how many providers returned each one. Each result lists its `sources`; `meta.engine` is `consensus` and `meta.route` lists every provider attempt. It stops once `num` unique results are in hand or after a few seconds, and costs the sum of one page at each provider that returned results (providers that failed, came back empty or were never started are free). `yandex` serves `/v1/maps`, `/v1/places` and `/v1/place` from Yandex Maps where the deployment enables it (otherwise a 503 `unavailable`, not charged); with `auto` it is the last fallback there.
     """
 
 
@@ -856,7 +856,7 @@ class MonitorUpdateRequest(BaseModel):
     """
     engine: str | EngineParam1 | None = None
     """
-    Which search providers may answer. `google` (the default) is Google only; within Google, SerpKite always fails over across its own proxy pools. `auto` allows falling back to other enabled providers, in route order, when Google is blocked or times out. A single other provider (`brave`) or a list (`["google","brave"]`, or `google,brave` in a query string) restricts the request to those providers. `meta.engine` always names the provider that answered and credits follow that provider's price. A key with "Allow fallback to other search engines" on treats a request without `engine` as `auto`. `consensus` (`/v1/search` only; 400 elsewhere, and it can't be combined with other names) queries several independent search indexes in parallel (at most one Bing-backed provider, so Yahoo or DuckDuckGo never count as agreeing with Bing), merges the results by URL and ranks them by how many providers returned each one. Each result lists its `sources`; `meta.engine` is `consensus` and `meta.route` lists every provider attempt. It stops once `num` unique results are in hand or after a few seconds, and costs the sum of one page at each provider that returned results (providers that failed, came back empty or were never started are free).
+    Which search providers may answer. `google` (the default) is Google only; within Google, SerpKite always fails over across its own proxy pools. `auto` allows falling back to other enabled providers, in route order, when Google is blocked or times out. A single other provider (`brave`) or a list (`["google","brave"]`, or `google,brave` in a query string) restricts the request to those providers. `meta.engine` always names the provider that answered and credits follow that provider's price. A key with "Allow fallback to other search engines" on treats a request without `engine` as `auto`. `consensus` (`/v1/search` only; 400 elsewhere, and it can't be combined with other names) queries several independent search indexes in parallel (at most one Bing-backed provider, so Yahoo or DuckDuckGo never count as agreeing with Bing), merges the results by URL and ranks them by how many providers returned each one. Each result lists its `sources`; `meta.engine` is `consensus` and `meta.route` lists every provider attempt. It stops once `num` unique results are in hand or after a few seconds, and costs the sum of one page at each provider that returned results (providers that failed, came back empty or were never started are free). `yandex` serves `/v1/maps`, `/v1/places` and `/v1/place` from Yandex Maps where the deployment enables it (otherwise a 503 `unavailable`, not charged); with `auto` it is the last fallback there.
     """
 
 
@@ -1027,7 +1027,7 @@ class PlacePhoto(BaseModel):
 
 class PlaceRequest(BaseModel):
     """
-    One of place_id, cid or fid is required (place_id wins, then fid, then cid)
+    One of place_id, cid or fid (Google; place_id wins, then fid, then cid) or oid (Yandex Maps) is required
     """
 
     model_config = ConfigDict(
@@ -1045,6 +1045,10 @@ class PlaceRequest(BaseModel):
     """
     Feature id "0x…:0x…" (`fid` of a result)
     """
+    oid: Annotated[str | None, Field(examples=["1045821788"], pattern="^[0-9]{1,20}$")] = None
+    """
+    Yandex Maps organisation id (`oid` of an `engine=yandex` maps result). Implies `engine=yandex`; not with place_id, cid or fid
+    """
     country: str | None = "us"
     """
     Country code (ISO 3166-1 alpha-2); Google's regional view of the listing
@@ -1061,7 +1065,7 @@ class PlaceRequest(BaseModel):
     """
     engine: str | EngineParam1 | None = None
     """
-    Which search providers may answer. `google` (the default) is Google only; within Google, SerpKite always fails over across its own proxy pools. `auto` allows falling back to other enabled providers, in route order, when Google is blocked or times out. A single other provider (`brave`) or a list (`["google","brave"]`, or `google,brave` in a query string) restricts the request to those providers. `meta.engine` always names the provider that answered and credits follow that provider's price. A key with "Allow fallback to other search engines" on treats a request without `engine` as `auto`. `consensus` (`/v1/search` only; 400 elsewhere, and it can't be combined with other names) queries several independent search indexes in parallel (at most one Bing-backed provider, so Yahoo or DuckDuckGo never count as agreeing with Bing), merges the results by URL and ranks them by how many providers returned each one. Each result lists its `sources`; `meta.engine` is `consensus` and `meta.route` lists every provider attempt. It stops once `num` unique results are in hand or after a few seconds, and costs the sum of one page at each provider that returned results (providers that failed, came back empty or were never started are free).
+    Which search providers may answer. `google` (the default) is Google only; within Google, SerpKite always fails over across its own proxy pools. `auto` allows falling back to other enabled providers, in route order, when Google is blocked or times out. A single other provider (`brave`) or a list (`["google","brave"]`, or `google,brave` in a query string) restricts the request to those providers. `meta.engine` always names the provider that answered and credits follow that provider's price. A key with "Allow fallback to other search engines" on treats a request without `engine` as `auto`. `consensus` (`/v1/search` only; 400 elsewhere, and it can't be combined with other names) queries several independent search indexes in parallel (at most one Bing-backed provider, so Yahoo or DuckDuckGo never count as agreeing with Bing), merges the results by URL and ranks them by how many providers returned each one. Each result lists its `sources`; `meta.engine` is `consensus` and `meta.route` lists every provider attempt. It stops once `num` unique results are in hand or after a few seconds, and costs the sum of one page at each provider that returned results (providers that failed, came back empty or were never started are free). `yandex` serves `/v1/maps`, `/v1/places` and `/v1/place` from Yandex Maps where the deployment enables it (otherwise a 503 `unavailable`, not charged); with `auto` it is the last fallback there.
     """
 
 
@@ -1084,7 +1088,7 @@ class PlaceResult(BaseModel):
     international_phone_number: Annotated[str | None, Field(examples=["+44 20 7232 3010"])] = None
     opening_hours: dict[str, str] | None = None
     """
-    Hours as Google displays them, keyed by English weekday (Monday … Sunday), in `language`, e.g. {"Monday": "7:30 am–6 pm", "Sunday": "Closed"}
+    Hours as the provider displays them, keyed by English weekday (Monday … Sunday), in `language`, e.g. {"Monday": "7:30 am–6 pm", "Sunday": "Closed"}; Yandex Maps: 24-hour times ("08:00–22:00"), "Closed"/"выходной", "Open 24 hours"/"круглосуточно"
     """
     weekly_hours: WeeklyHours | None = None
     country: str | None = None
@@ -1097,7 +1101,7 @@ class PlaceResult(BaseModel):
     """
     description: str | None = None
     """
-    Google's short description of the place, or the owner's, when Google shows one
+    Google's short description of the place, or the owner's, when Google shows one; Yandex Maps' summary of the place when it has one
     """
     photos: list[PlacePhoto] | None = None
     """
@@ -1111,6 +1115,14 @@ class PlaceResult(BaseModel):
     place_id: str | None = None
     cid: str | None = None
     fid: str | None = None
+    oid: str | None = None
+    """
+    Yandex Maps organisation id (engine=yandex), for /v1/place
+    """
+    yandex_maps_url: str | None = None
+    """
+    The place on Yandex Maps (engine=yandex): https://yandex.ru/maps/org/<oid>/
+    """
 
 
 class PlacesResponse(BaseModel):
@@ -1245,6 +1257,7 @@ class RequestEcho(BaseModel):
     place_id: str | None = None
     cid: str | None = None
     fid: str | None = None
+    oid: str | None = None
     sort: str | None = None
     include_content: int | None = None
     format: str | None = None
@@ -1429,7 +1442,7 @@ class SearchRequest(BaseModel):
     """
     engine: str | EngineParam1 | None = None
     """
-    Which search providers may answer. `google` (the default) is Google only; within Google, SerpKite always fails over across its own proxy pools. `auto` allows falling back to other enabled providers, in route order, when Google is blocked or times out. A single other provider (`brave`) or a list (`["google","brave"]`, or `google,brave` in a query string) restricts the request to those providers. `meta.engine` always names the provider that answered and credits follow that provider's price. A key with "Allow fallback to other search engines" on treats a request without `engine` as `auto`. `consensus` (`/v1/search` only; 400 elsewhere, and it can't be combined with other names) queries several independent search indexes in parallel (at most one Bing-backed provider, so Yahoo or DuckDuckGo never count as agreeing with Bing), merges the results by URL and ranks them by how many providers returned each one. Each result lists its `sources`; `meta.engine` is `consensus` and `meta.route` lists every provider attempt. It stops once `num` unique results are in hand or after a few seconds, and costs the sum of one page at each provider that returned results (providers that failed, came back empty or were never started are free).
+    Which search providers may answer. `google` (the default) is Google only; within Google, SerpKite always fails over across its own proxy pools. `auto` allows falling back to other enabled providers, in route order, when Google is blocked or times out. A single other provider (`brave`) or a list (`["google","brave"]`, or `google,brave` in a query string) restricts the request to those providers. `meta.engine` always names the provider that answered and credits follow that provider's price. A key with "Allow fallback to other search engines" on treats a request without `engine` as `auto`. `consensus` (`/v1/search` only; 400 elsewhere, and it can't be combined with other names) queries several independent search indexes in parallel (at most one Bing-backed provider, so Yahoo or DuckDuckGo never count as agreeing with Bing), merges the results by URL and ranks them by how many providers returned each one. Each result lists its `sources`; `meta.engine` is `consensus` and `meta.route` lists every provider attempt. It stops once `num` unique results are in hand or after a few seconds, and costs the sum of one page at each provider that returned results (providers that failed, came back empty or were never started are free). `yandex` serves `/v1/maps`, `/v1/places` and `/v1/place` from Yandex Maps where the deployment enables it (otherwise a 503 `unavailable`, not charged); with `auto` it is the last fallback there.
     """
     include_domains: str | DomainList1 | None = None
     """
@@ -1728,10 +1741,11 @@ class WebpageResponse(BaseModel):
 
 class WeeklyHours(BaseModel):
     """
-    Opening hours per weekday, from Google's listing, as local times (`timezone`) in 24-hour HH:MM.
+    Opening hours per weekday, from the provider's listing, as local times (`timezone`) in 24-hour HH:MM.
     A day that is closed is an empty list; a day open 24 hours is `[{"open": "00:00", "close": "24:00"}]`;
     a day with a break has several intervals. `close` is "24:00" at midnight, and an interval that
-    ends after midnight has `next_day: true` (e.g. 17:30–03:00). Days Google doesn't list are absent.
+    ends after midnight has `next_day: true` (e.g. 17:30–03:00). Days Google doesn't list are absent;
+    Yandex Maps lists all seven or none.
 
     """
 

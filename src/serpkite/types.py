@@ -211,7 +211,7 @@ __all__ = [
 TimeRange = Literal["hour", "day", "week", "month", "year"]
 Device = Literal["desktop", "mobile"]
 ReviewsSort = Literal["most_relevant", "newest", "highest_rating", "lowest_rating"]
-Provider = Literal["google", "brave", "bing", "yahoo", "duckduckgo", "mojeek", "wikipedia"]
+Provider = Literal["google", "brave", "bing", "yahoo", "duckduckgo", "mojeek", "wikipedia", "yandex"]
 """A search provider that can answer a request; ``meta.engine`` names the one that did."""
 RouteOutcome = Literal[
     "ok",
@@ -356,12 +356,15 @@ class ReviewsParams(TypedDict, total=False):
 
 
 class PlaceParams(TypedDict, total=False):
-    """Place details parameters. Pass one of ``place_id``, ``cid`` or ``fid`` (``place_id`` wins,
-    then ``fid``, then ``cid``)."""
+    """Place details parameters. Pass one of ``place_id``, ``cid`` or ``fid`` (Google; ``place_id``
+    wins, then ``fid``, then ``cid``), or ``oid`` (Yandex Maps)."""
 
     place_id: Optional[str]
     cid: Optional[str]
     fid: Optional[str]
+    oid: Optional[str]
+    """Yandex Maps organisation id (``oid`` of an ``engine="yandex"`` maps result); implies
+    ``engine="yandex"`` and can't be combined with Google's ids."""
     country: Optional[str]
     """Country code (ISO 3166-1 alpha-2), default ``us``: Google's regional view of the listing."""
     language: Optional[str]

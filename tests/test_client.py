@@ -232,6 +232,26 @@ def test_place_requires_an_id_and_types_details() -> None:
 
 
 @respx.mock
+def test_place_by_yandex_oid() -> None:
+    place = {
+        "position": 1,
+        "title": "Кофемания",
+        "country": "RU",
+        "timezone": "Europe/Moscow",
+        "weekly_hours": {"monday": [{"open": "00:00", "close": "24:00"}]},
+        "oid": "1045821788",
+        "yandex_maps_url": "https://yandex.ru/maps/org/1045821788/",
+    }
+    route = respx.post(f"{BASE}/v1/place").mock(
+        return_value=httpx.Response(200, json=list_body("place", [place]))
+    )
+    res = SerpKite().place(oid="1045821788", language="ru")
+    assert sent_json(route) == {"oid": "1045821788", "language": "ru"}
+    assert res.results[0].oid == "1045821788"
+    assert res.results[0].yandex_maps_url == "https://yandex.ru/maps/org/1045821788/"
+
+
+@respx.mock
 def test_webpage_rank_account() -> None:
     web = respx.post(f"{BASE}/v1/webpage").mock(
         side_effect=[

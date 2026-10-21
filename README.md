@@ -67,7 +67,7 @@ Every query vertical takes `q` plus optional keyword parameters: `country`, `lan
 | `sk.news(q, **params)` | `/v1/news` | `NewsResponse` |
 | `sk.maps(q, ll="@40.7,-74.0,14z", **params)` | `/v1/maps` | `PlacesResponse` |
 | `sk.places(q, **params)` | `/v1/places` | `PlacesResponse` |
-| `sk.place(place_id=… \| cid=… \| fid=…, country=, language=)` | `/v1/place` | `PlacesResponse` (one place, or empty) |
+| `sk.place(place_id=… \| cid=… \| fid=… \| oid=…, country=, language=)` | `/v1/place` | `PlacesResponse` (one place, or empty) |
 | `sk.reviews(place_id=… \| cid=… \| fid=…, sort=, page_token=, num=)` | `/v1/reviews` | `ReviewsResponse` |
 | `sk.shopping(q, **params)` | `/v1/shopping` | `ShoppingResponse` |
 | `sk.scholar(q, **params)` | `/v1/scholar` | `ScholarResponse` |
