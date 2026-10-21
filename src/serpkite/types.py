@@ -306,7 +306,7 @@ class SearchParams(TypedDict, total=False):
     ``meta.engine`` names the provider that answered; credits follow its price."""
     include_domains: Optional[DomainList]
     """Only results from these domains (search, news, images, videos): ``example.com``,
-    ``github.com/org`` (path prefix) or ``.gov`` (TLD). At most 20. Not with ``engine="consensus"``."""
+    ``github.com/org`` (path prefix) or ``.gov`` (TLD). At most 20."""
     exclude_domains: Optional[DomainList]
     """Drop results from these domains (search, news, images, videos)."""
     boost_domains: Optional[DomainList]

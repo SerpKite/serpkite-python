@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SerpKite SERP API
-  version: 1.7.0
+  version: 1.8.0
   description: |
     Public search API (api.serpkite.com). Google results as clean JSON or Markdown
     for AI agents, plus a Google Custom Search–compatible endpoint. Official SDKs:
@@ -1062,10 +1062,10 @@ components:
         engine: { $ref: "#/components/schemas/EngineParam" }
         include_domains:
           $ref: "#/components/schemas/DomainList"
-          description: "Only results from these domains (search, news, images, videos). Compiled into site: operators and enforced on the results. Not with engine=consensus"
+          description: "Only results from these domains (search, news, images, videos). Compiled into site: operators and enforced on the results. With engine=consensus, every provider gets the operators and only providers with a remaining result are billed"
         exclude_domains:
           $ref: "#/components/schemas/DomainList"
-          description: "Drop results from these domains (search, news, images, videos). Not with engine=consensus"
+          description: "Drop results from these domains (search, news, images, videos)"
         boost_domains:
           $ref: "#/components/schemas/DomainList"
           description: Move results from these domains to the top, keeping the order within both groups (search, news)
@@ -1347,7 +1347,7 @@ components:
       required: [url]
       properties:
         url: { type: string, format: uri, description: The site (any page of it; sitemaps are read from its origin) }
-        search: { type: string, maxLength: 512, description: "Keep only URLs relevant to these words, most relevant first" }
+        search: { type: string, maxLength: 512, description: "Keep only URLs relevant to these words, most relevant first. When the sitemap lists fewer than 50 URLs, up to 8 of the start page's links are read too, one level deeper" }
         limit: { type: integer, minimum: 1, maximum: 5000, default: 100 }
         include_subdomains: { type: boolean, default: false }
         include_paths: { type: array, items: { type: string }, maxItems: 20, description: "Regular expressions matched against the URL path; keep only URLs matching one" }
@@ -1412,9 +1412,10 @@ components:
         several independent search indexes in parallel (at most one Bing-backed provider, so Yahoo or
         DuckDuckGo never count as agreeing with Bing), merges the results by URL and ranks them by how many
         providers returned each one. Each result lists its `sources`; `meta.engine` is `consensus` and
-        `meta.route` lists every provider attempt. It stops once `num` unique results are in hand or after
-        a few seconds, and costs the sum of one page at each provider that returned results (providers that
-        failed, came back empty or were never started are free).
+        `meta.route` lists every provider attempt. Up to three providers answer: a provider that fails or
+        comes back empty hands its turn to the next one in the route. It stops once `num` unique results
+        are in hand or after a few seconds, and costs the sum of one page at each provider that returned
+        results (providers that failed, came back empty or were never started are free).
         `yandex` serves `/v1/maps`, `/v1/places` and `/v1/place` from Yandex Maps where the deployment
         enables it (otherwise a 503 `unavailable`, not charged); with `auto` it is the last fallback there.
       oneOf:
