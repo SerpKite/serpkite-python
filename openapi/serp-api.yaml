@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SerpKite SERP API
-  version: 1.8.0
+  version: 1.9.0
   description: |
     Public search API (api.serpkite.com). Google results as clean JSON or Markdown
     for AI agents, plus a Google Custom Search–compatible endpoint. Official SDKs:
@@ -45,7 +45,8 @@ info:
     Credit table: search/news/images/videos/maps/places/shopping/scholar/patents/
     webpage/customsearch = 1 per page; place details = 1; `num=100` depth bundle = 7; reviews = 1 per 10;
     autocomplete = 0.5; `include_content` = +1 per fetched page;
-    batches ×0.5; cache hit via `max_age` ×0.5. `engine=consensus` (search only) =
+    batches ×0.5 (from 2026-11-23 a batch depth request is 0.5 per page with
+    results, without the bundle cap: `num=100` = 5); cache hit via `max_age` ×0.5. `engine=consensus` (search only) =
     the sum of one page per provider that returned results.
 servers:
   - url: https://api.serpkite.com
