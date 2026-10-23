@@ -1417,8 +1417,10 @@ components:
         comes back empty hands its turn to the next one in the route. It stops once `num` unique results
         are in hand or after a few seconds, and costs the sum of one page at each provider that returned
         results (providers that failed, came back empty or were never started are free).
-        `yandex` serves `/v1/maps`, `/v1/places` and `/v1/place` from Yandex Maps where the deployment
-        enables it (otherwise a 503 `unavailable`, not charged); with `auto` it is the last fallback there.
+        `yandex` serves `/v1/search` from Yandex web search (no `time` filter or `safe: active`: a request
+        naming it gets a 400 with them) and `/v1/maps`, `/v1/places` and `/v1/place` from Yandex Maps, where
+        the deployment enables it (otherwise a 503 `unavailable`, not charged); with `auto` it is the last
+        fallback there.
       oneOf:
         - type: string
           default: google
