@@ -56,7 +56,7 @@ def verify_webhook(
     tolerance_seconds: int = 300,
     now: Optional[float] = None,
 ) -> bool:
-    """Check a webhook delivery (any event: batches, crawls, monitors).
+    """Check a webhook delivery (any event: batches, crawls, research, monitors).
 
     ``X-SerpKite-Signature`` must be ``v1=<hex HMAC-SHA256(secret, "<X-SerpKite-Timestamp>.<raw body>")>``
     and the timestamp within ``tolerance_seconds`` of now. Pass the raw request body exactly
@@ -88,12 +88,14 @@ def parse_webhook(
     ``payload`` must then be the raw body) and :class:`WebhookSignatureError` is raised when the
     signature or timestamp is invalid; without it, verify the delivery yourself first.
 
-    ``crawl.completed`` → :class:`TaskCompletedEvent`, ``monitor.results`` →
+    ``crawl.completed`` and ``research.completed`` → :class:`TaskCompletedEvent` (``kind`` says
+    which; ``result`` is the crawl or research result as a ``dict``), ``monitor.results`` →
     :class:`MonitorResultsEvent`, ``batch.completed`` → :class:`BatchCompletedEvent` (a :class:`Batch`).
     The event comes from the ``X-SerpKite-Event`` header, or the body's ``event`` field.
-    A crawl event's ``result`` is ``None`` with ``result_omitted=True`` when it was larger than
-    4 MB; fetch it from ``poll_url`` (or ``get_crawl``). A monitor event's ``run_id`` (also the
-    ``X-SerpKite-Delivery`` header) identifies the run: use it to deduplicate retries.
+    A task event's ``result`` is ``None`` with ``result_omitted=True`` when it was larger than
+    4 MB; fetch it from ``poll_url`` (or ``get_crawl`` / ``get_research``). A monitor event's
+    ``run_id`` (also the ``X-SerpKite-Delivery`` header) identifies the run: use it to
+    deduplicate retries.
     """
     if secret is not None:
         if isinstance(payload, Mapping):
@@ -106,7 +108,7 @@ def parse_webhook(
     event = _header(headers, "X-SerpKite-Event") if headers is not None else None
     if not event and isinstance(data, dict):
         event = data.get("event")
-    if event == "crawl.completed":
+    if event in ("crawl.completed", "research.completed"):
         return TaskCompletedEvent.model_validate(data)
     if event == "monitor.results":
         return MonitorResultsEvent.model_validate(data)

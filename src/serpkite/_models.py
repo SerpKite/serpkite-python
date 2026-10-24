@@ -34,13 +34,142 @@ class AnswerBox(BaseModel):
     link: str | None = None
 
 
+class AnswerRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    q: Annotated[str, Field(max_length=2048, min_length=1)]
+    depth: str | None = "standard"
+    """
+    `fast` answers from the result page (1 + 2 credits); `standard` also reads the top `num_sources` pages (1 + 1 per page + 4 credits)
+    """
+    num_sources: Annotated[int | None, Field(ge=1, le=5)] = 3
+    """
+    Pages read (depth=standard only)
+    """
+    stream: bool | None = False
+    """
+    Send Server-Sent Events (`results`, `delta`…, `done` | `error`) instead of one JSON body
+    """
+    output_schema: dict[str, Any] | None = None
+    """
+    A JSON Schema (at most 16 KB). The answer becomes a JSON value in `output`. Not with stream
+    """
+    country: str | None = "us"
+    language: str | None = "en"
+    location: str | None = None
+    uule: str | None = None
+    time: str | None = None
+    tbs: str | None = None
+    device: str | None = "desktop"
+    safe: str | None = "off"
+    autocorrect: bool | None = True
+    max_age: Annotated[int | None, Field(ge=0)] = None
+    """
+    Accept a cached search up to this many seconds old
+    """
+    engine: str | EngineParam1 | None = None
+    """
+    Which search providers may answer. `google` (the default) is Google only; within Google, SerpKite always fails over across its own proxy pools. `auto` allows falling back to other enabled providers, in route order, when Google is blocked or times out. A single other provider (`brave`) or a list (`["google","brave"]`, or `google,brave` in a query string) restricts the request to those providers. `meta.engine` always names the provider that answered and credits follow that provider's price. A key with "Allow fallback to other search engines" on treats a request without `engine` as `auto`. `consensus` (`/v1/search` only; 400 elsewhere, and it can't be combined with other names) queries several independent search indexes in parallel (at most one Bing-backed provider, so Yahoo or DuckDuckGo never count as agreeing with Bing), merges the results by URL and ranks them by how many providers returned each one. Each result lists its `sources`; `meta.engine` is `consensus` and `meta.route` lists every provider attempt. Up to three providers answer: a provider that fails or comes back empty hands its turn to the next one in the route. It stops once `num` unique results are in hand or after a few seconds, and costs the sum of one page at each provider that returned results (providers that failed, came back empty or were never started are free). `yandex` serves `/v1/search` from Yandex web search (no `time` filter or `safe: active`: a request naming it gets a 400 with them) and `/v1/maps`, `/v1/places` and `/v1/place` from Yandex Maps, where the deployment enables it (otherwise a 503 `unavailable`, not charged); with `auto` it is the last fallback there.
+    """
+    include_domains: str | DomainList1 | None = None
+    """
+    Domains as an array or a comma-separated string, at most 20: a host (`example.com`, subdomains match), a host with a path prefix (`github.com/org`) or a TLD (`.gov`).
+    """
+    exclude_domains: str | DomainList1 | None = None
+    """
+    Domains as an array or a comma-separated string, at most 20: a host (`example.com`, subdomains match), a host with a path prefix (`github.com/org`) or a TLD (`.gov`).
+    """
+    boost_domains: str | DomainList1 | None = None
+    """
+    Domains as an array or a comma-separated string, at most 20: a host (`example.com`, subdomains match), a host with a path prefix (`github.com/org`) or a TLD (`.gov`).
+    """
+    start_date: date_aliased | None = None
+    end_date: date_aliased | None = None
+
+
+class AnswerResponse(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    request: RequestEcho
+    answer: str | None
+    """
+    Markdown with `[n]` citation markers. Null with output_schema, or when there was nothing to answer from
+    """
+    output: Any | None = None
+    """
+    output_schema only: the JSON value matching the schema
+    """
+    citations: list[Citation]
+    """
+    The sources the answer cites, in first-cited order
+    """
+    results: list[AnswerSource]
+    meta: AnswerMeta
+
+
+class AnswerSource(BaseModel):
+    """
+    A result the answer may cite, numbered as in the prompt (`[index]`)
+    """
+
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    index: int
+    title: str
+    link: str
+    domain: str | None = None
+    date: str | None = None
+    """
+    Publish date (ISO 8601 when known, else as shown)
+    """
+
+
+class AnswerStreamDelta(BaseModel):
+    """
+    `event: delta`: the next piece of answer text
+    """
+
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    text: str
+
+
+class AnswerStreamDone(BaseModel):
+    """
+    `event: done`, sent last: the final answer (citation markers checked) and meta with the total credits
+    """
+
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    answer: str
+    citations: list[Citation]
+    meta: AnswerMeta
+
+
+class AnswerStreamResults(BaseModel):
+    """
+    `event: results`, sent first
+    """
+
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    request: RequestEcho
+    results: list[AnswerSource]
+
+
 class AutocompleteResponse(BaseModel):
     model_config = ConfigDict(
         extra="allow",
     )
     request: RequestEcho
     results: list[Suggestion]
-    meta: Meta2
+    meta: MetaModel
 
 
 class Batch(BaseModel):
@@ -95,6 +224,19 @@ class CSEResponse(BaseModel):
     context: dict[str, Any] | None = None
     searchInformation: SearchInformation
     items: list[Item]
+
+
+class Citation(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    index: int
+    """
+    The `[n]` marker used in the text (1-based source number)
+    """
+    title: str
+    link: str
+    domain: str | None = None
 
 
 class CrawlPage(BaseModel):
@@ -177,7 +319,7 @@ class CrawlResult(BaseModel):
     url: str
     pages: list[CrawlPage]
     failed: list[ExtractFailure]
-    stats: Stats
+    stats: Stats1
 
 
 class CrawlTask(BaseModel):
@@ -193,12 +335,24 @@ class CrawlTask(BaseModel):
     credits_reserved: float
     credits_used: float
     webhook_status: str | None = None
-    progress: Progress | None = None
+    progress: Progress1 | None = None
     result: CrawlResult | None = None
     """
     Set once the crawl ends (also on cancel, with the pages read so far)
     """
     error: TaskError | None = None
+
+
+class Credits(BaseModel):
+    """
+    `credits_used` split into the search and the model part
+    """
+
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    search: float | None = None
+    answer: float | None = None
 
 
 class DomainList1(RootModel[list[str]]):
@@ -334,7 +488,19 @@ class ExtractRequest(BaseModel):
     """
     timeout: Annotated[int | None, Field(ge=1, le=90)] = 50
     """
-    Seconds to wait for the pages; a page still loading is listed in `failed` (`upstream_timeout`, not charged)
+    Seconds to wait for the pages; a page still loading is listed in `failed` (`upstream_timeout`, not charged). Default 75 with summary or output_schema
+    """
+    summary: bool | None = False
+    """
+    Add a 3-6 sentence AI summary of each page (+4 credits per page; focused on `query` when set)
+    """
+    output_schema: dict[str, Any] | None = None
+    """
+    A JSON Schema (at most 16 KB): each page's data is returned as JSON matching it in `output` (+4 credits per page)
+    """
+    prompt: Annotated[str | None, Field(max_length=4096)] = None
+    """
+    Guides output_schema extraction (what to pick, how to normalise); needs output_schema
     """
 
 
@@ -388,6 +554,16 @@ class ExtractResult(BaseModel):
     """
     highlights > 0 only
     """
+    summary: str | None = None
+    """
+    summary=true only (null when it failed)
+    """
+    summary_error: str | None = None
+    output: Any | None = None
+    """
+    output_schema only: the JSON value matching the schema (null when it failed)
+    """
+    output_error: str | None = None
 
 
 class Highlight(BaseModel):
@@ -442,7 +618,7 @@ class ImagesResponse(BaseModel):
     )
     request: RequestEcho
     results: list[ImageResult]
-    meta: Meta2
+    meta: MetaModel
 
 
 class Item(BaseModel):
@@ -484,6 +660,20 @@ class KnowledgeGraph(BaseModel):
     description_source: str | None = None
     description_link: str | None = None
     attributes: dict[str, str] | None = None
+
+
+class LLMUsage(BaseModel):
+    """
+    The model that wrote this response's AI part and the tokens it used
+    """
+
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    provider: Annotated[str | None, Field(examples=["anthropic", "openai"])] = None
+    model: Annotated[str | None, Field(examples=["claude-haiku-5-5", "gpt-6-luna"])] = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
 
 
 class MapRequest(BaseModel):
@@ -558,6 +748,7 @@ class Meta(BaseModel):
     latency_ms: int | None = None
     succeeded: int
     failed: int
+    llm: LLMUsage | None = None
 
 
 class Meta1(BaseModel):
@@ -570,7 +761,7 @@ class Meta1(BaseModel):
     count: int
 
 
-class Meta2(BaseModel):
+class MetaModel(BaseModel):
     model_config = ConfigDict(
         extra="allow",
     )
@@ -589,6 +780,21 @@ class Meta2(BaseModel):
     resolved_urls: bool | None = None
     parse_quality: str | None = None
     latency_ms: int | None = None
+    llm: LLMUsage | None = None
+    warnings: list[str] | None = None
+    """
+    Non-fatal problems, e.g. an include_answer that failed (and was refunded)
+    """
+
+
+class AnswerMeta(MetaModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    credits: Credits | None = None
+    """
+    `credits_used` split into the search and the model part
+    """
 
 
 class Monitor(BaseModel):
@@ -874,7 +1080,8 @@ class NewsResponse(BaseModel):
     )
     request: RequestEcho
     results: list[NewsResult]
-    meta: Meta2
+    answer: SearchAnswer | None = None
+    meta: MetaModel
 
 
 class NewsResult(BaseModel):
@@ -996,7 +1203,7 @@ class PatentsResponse(BaseModel):
     )
     request: RequestEcho
     results: list[PatentResult]
-    meta: Meta2
+    meta: MetaModel
 
 
 class PeopleAlsoAsk(BaseModel):
@@ -1131,10 +1338,21 @@ class PlacesResponse(BaseModel):
     )
     request: RequestEcho
     results: list[PlaceResult]
-    meta: Meta2
+    meta: MetaModel
 
 
 class Progress(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    round: int | None = None
+    rounds: int | None = None
+    queries: int | None = None
+    sources: int | None = None
+    step: str | None = None
+
+
+class Progress1(BaseModel):
     model_config = ConfigDict(
         extra="allow",
     )
@@ -1193,7 +1411,7 @@ class RankResponse(BaseModel):
     """
     Organic results inspected
     """
-    meta: Meta2
+    meta: MetaModel
 
 
 class RelatedSearch(BaseModel):
@@ -1265,6 +1483,94 @@ class RequestEcho(BaseModel):
     exclude_domains: list[str] | None = None
     boost_domains: list[str] | None = None
     highlights: bool | None = None
+    include_answer: bool | None = None
+
+
+class ResearchRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    input: Annotated[str, Field(max_length=8000, min_length=1)]
+    """
+    The research task in plain words (`q` is accepted as an alias)
+    """
+    effort: str | None = "standard"
+    """
+    lite = 30, standard = 75, deep = 200 credits
+    """
+    output_schema: dict[str, Any] | None = None
+    """
+    A JSON Schema (at most 16 KB); the report is also returned as a JSON value in `result.output`
+    """
+    country: str | None = None
+    language: str | None = None
+    include_domains: Annotated[list[str] | None, Field(max_length=20)] = None
+    exclude_domains: Annotated[list[str] | None, Field(max_length=20)] = None
+    webhook_url: AnyUrl | None = None
+    """
+    Receives the signed `research.completed` event. Defaults to the account webhook
+    """
+
+
+class ResearchResult(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    input: str
+    effort: str
+    report: str
+    """
+    Markdown report with `[n]` citation markers
+    """
+    citations: list[Citation]
+    sources: list[ResearchSource]
+    queries: list[str]
+    """
+    Every search the research ran
+    """
+    stats: Stats | None = None
+    llm: LLMUsage | None = None
+    output: Any | None = None
+    """
+    output_schema only: the JSON value (null when it could not be produced)
+    """
+    output_error: str | None = None
+
+
+class ResearchSource(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    index: int
+    title: str
+    link: str
+    domain: str | None = None
+    published_at: str | None = None
+    query: str | None = None
+    """
+    The query that found it
+    """
+
+
+class ResearchTask(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    id: UUID
+    kind: Literal["research"]
+    status: str
+    created_at: AwareDatetime
+    started_at: AwareDatetime | None = None
+    completed_at: AwareDatetime | None = None
+    credits_reserved: float
+    credits_used: float
+    webhook_status: str | None = None
+    progress: Progress | None = None
+    result: ResearchResult | dict[str, Any] | None = None
+    """
+    Set once the report is written (a failed or canceled task may carry only `queries`)
+    """
+    error: TaskError | None = None
 
 
 class Response(BaseModel):
@@ -1328,7 +1634,7 @@ class ReviewsResponse(BaseModel):
     """
     Pass as `page_token` for the next page. Absent on the last page and at the 100-review depth limit
     """
-    meta: Meta2
+    meta: MetaModel
 
 
 class RouteStep(BaseModel):
@@ -1353,7 +1659,7 @@ class ScholarResponse(BaseModel):
     )
     request: RequestEcho
     results: list[ScholarResult]
-    meta: Meta2
+    meta: MetaModel
 
 
 class ScholarResult(BaseModel):
@@ -1370,6 +1676,21 @@ class ScholarResult(BaseModel):
     cited_by: int | None = None
     pdf_url: str | None = None
     id: str | None = None
+
+
+class SearchAnswer(BaseModel):
+    """
+    include_answer: a cited answer over this response's results
+    """
+
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    text: str
+    """
+    Markdown with `[n]` citation markers (n = the numbered sources: answer box, knowledge panel, then results)
+    """
+    citations: list[Citation]
 
 
 class SearchInformation(BaseModel):
@@ -1468,6 +1789,10 @@ class SearchRequest(BaseModel):
     """
     Return up to 3 query-ranked passages (`highlights`) of each page read by include_content instead of the whole page (search only; needs include_content; no extra credits)
     """
+    include_answer: bool | None = False
+    """
+    Add a cited AI `answer` written by Claude over this response's results (search and news; +2 credits, +4 when it read pages via `include_content`; refunded with a `meta.warnings` entry when the model fails)
+    """
 
 
 class SearchResponse(BaseModel):
@@ -1483,7 +1808,8 @@ class SearchResponse(BaseModel):
     related_searches: list[RelatedSearch]
     top_stories: list[NewsResult] | None = None
     places: list[PlaceResult] | None = None
-    meta: Meta2
+    answer: SearchAnswer | None = None
+    meta: MetaModel
 
 
 class ShoppingResponse(BaseModel):
@@ -1492,7 +1818,7 @@ class ShoppingResponse(BaseModel):
     )
     request: RequestEcho
     results: list[ShoppingResult]
-    meta: Meta2
+    meta: MetaModel
 
 
 class ShoppingResult(BaseModel):
@@ -1524,6 +1850,15 @@ class Sitelink(BaseModel):
 
 
 class Stats(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    searches: int | None = None
+    sources: int | None = None
+    rounds: int | None = None
+
+
+class Stats1(BaseModel):
     model_config = ConfigDict(
         extra="allow",
     )
@@ -1595,15 +1930,15 @@ class TaskCancelResponse(BaseModel):
 
 class TaskCompletedEvent(BaseModel):
     """
-    Body of `crawl.completed`
+    Body of `crawl.completed` and `research.completed`
     """
 
     model_config = ConfigDict(
         extra="allow",
     )
-    event: Literal["crawl.completed"]
+    event: str
     id: UUID
-    kind: Literal["crawl"]
+    kind: str
     status: str
     created_at: AwareDatetime
     completed_at: AwareDatetime | None = None
@@ -1614,7 +1949,7 @@ class TaskCompletedEvent(BaseModel):
     """
     result: Any | None = None
     """
-    The CrawlResult (null when the crawl failed without one, or when it is larger than 4 MB: see result_omitted)
+    The CrawlResult or ResearchResult (null when the task failed without one, or when it is larger than 4 MB: see result_omitted)
     """
     result_omitted: bool | None = None
     """
@@ -1683,7 +2018,7 @@ class VideosResponse(BaseModel):
     )
     request: RequestEcho
     results: list[VideoResult]
-    meta: Meta2
+    meta: MetaModel
 
 
 class WebpageRequest(BaseModel):
@@ -1736,7 +2071,7 @@ class WebpageResponse(BaseModel):
     """
     include_images=true only. Image URLs in document order
     """
-    meta: Meta2
+    meta: MetaModel
 
 
 class WeeklyHours(BaseModel):

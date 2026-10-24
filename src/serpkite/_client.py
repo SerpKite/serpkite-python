@@ -4,13 +4,25 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Mapping, Sequence
 from types import TracebackType
 from typing import Any, Literal, Optional, TypeVar, Union, overload
 
 import httpx
 from typing_extensions import Self, Unpack
 
+from ._answer import (
+    ANSWER_WAIT,
+    STREAM_HEADERS,
+    Schema,
+    aiter_events,
+    answer_body,
+    extract_ai_wait,
+    iter_events,
+    json_as_events,
+    research_body,
+    schema_dict,
+)
 from ._base import (
     DEFAULT_MAX_RETRIES,
     DEFAULT_TIMEOUT,
@@ -35,11 +47,16 @@ from ._exceptions import (
 from ._tasks import TASK_FINAL_STATUSES, AsyncMonitors, Id, Monitors, next_poll, path_id, task_body
 from .types import (
     Account,
+    AnswerDepth,
+    AnswerParams,
+    AnswerResponse,
+    AnswerStreamEvent,
     AutocompleteResponse,
     Batch,
     BatchCreateResponse,
     BatchEndpoint,
     CrawlTask,
+    DomainList,
     ExtractResponse,
     ImagesResponse,
     MapResponse,
@@ -49,6 +66,8 @@ from .types import (
     PlacesResponse,
     RankParams,
     RankResponse,
+    ResearchEffort,
+    ResearchTask,
     ReviewsParams,
     ReviewsResponse,
     ScholarResponse,
@@ -254,12 +273,13 @@ class SerpKite:
         idempotent: bool = True,
         headers: Optional[Mapping[str, str]] = None,
         min_timeout: Optional[float] = None,
+        stream: bool = False,
     ) -> httpx.Response:
         attempt = 0
         while True:
             request = self._config.build(self._http, method, path, json, headers, min_timeout)
             try:
-                response = self._http.send(request)
+                response = self._http.send(request, stream=stream)
             except httpx.TransportError as exc:
                 if attempt < self._config.max_retries and retryable_exception(exc, idempotent):
                     _sleep(retry_delay(attempt, None))
@@ -268,6 +288,8 @@ class SerpKite:
                 if isinstance(exc, httpx.TimeoutException):
                     raise APITimeoutError(f"request to {path} timed out") from exc
                 raise APIConnectionError(f"could not reach {self._config.base_url}: {exc}") from exc
+            if stream and response.status_code >= 400:
+                response.read()  # should_retry and from_response read the error body
             if attempt < self._config.max_retries and should_retry(response, idempotent):
                 response.close()
                 _sleep(retry_delay(attempt, response))
@@ -911,13 +933,23 @@ class SerpKite:
         max_age: Optional[int] = None,
         country: Optional[str] = None,
         timeout: Optional[int] = None,
+        summary: bool = False,
+        output_schema: Optional[Schema] = None,
+        prompt: Optional[str] = None,
     ) -> ExtractResponse:
         """Read up to 20 URLs (HTML or PDF) as Markdown, text or HTML in one call.
 
         ``query`` + ``highlights`` (1-10) add the passages of each page most relevant to the
         query (BM25). 1 credit per URL that comes back (0.5 from cache); URLs that fail are
-        listed in ``failed`` and cost nothing. ``timeout`` (seconds, 1-90, default 50) reports pages
-        still loading as failed (``upstream_timeout``)."""
+        listed in ``failed`` and cost nothing. ``timeout`` (seconds, 1-90, default 50, 75 with
+        ``summary`` or ``output_schema``) reports pages still loading as failed
+        (``upstream_timeout``).
+
+        ``summary=True`` adds an AI summary of each page (``result.summary``, focused on ``query``
+        when set). ``output_schema`` (a JSON Schema dict or a pydantic model class; ``prompt``
+        guides it) returns each page's data as JSON in ``result.output``. Both cost extra per page
+        (https://serpkite.com/pricing); a page whose model step failed carries ``summary_error`` /
+        ``output_error`` instead and isn't charged for it."""
         body = clean(
             {
                 "urls": list(urls),
@@ -930,10 +962,14 @@ class SerpKite:
                 "max_age": max_age,
                 "country": country,
                 "timeout": timeout,
+                "summary": summary or None,
+                "output_schema": schema_dict(output_schema),
+                "prompt": prompt,
             }
         )
+        wait = extract_ai_wait(timeout, summary or output_schema is not None)
         # Billed per page even when the response is lost: no retry on 5xx or a read timeout.
-        raw = self._json("POST", "/v1/extract", body, idempotent=False, min_timeout=extract_wait(timeout))
+        raw = self._json("POST", "/v1/extract", body, idempotent=False, min_timeout=extract_wait(wait))
         return ExtractResponse.model_validate(raw)
 
     def map(
@@ -1033,6 +1069,116 @@ class SerpKite:
         up to 30)."""
         return self._wait_task(self.get_crawl, id, timeout, poll_interval)
 
+    def research(
+        self,
+        input: str,
+        *,
+        effort: Optional[ResearchEffort] = None,
+        output_schema: Optional[Schema] = None,
+        country: Optional[str] = None,
+        language: Optional[str] = None,
+        include_domains: Optional[DomainList] = None,
+        exclude_domains: Optional[DomainList] = None,
+        webhook_url: Optional[str] = None,
+    ) -> TaskCreated:
+        """Start an async research task: planned Google searches, page reading and a cited
+        Markdown report (``result.report``; with ``output_schema``, a JSON Schema dict or a
+        pydantic model class, also ``result.output``).
+
+        ``effort`` (``lite``, ``standard`` (default), ``deep``) sets how much is searched and read;
+        its flat price (https://serpkite.com/pricing) is reserved up front and charged only when
+        the report is written. Poll with :meth:`get_research` or
+        :meth:`wait_research`, or receive the signed ``research.completed`` webhook. Only
+        retried on 429, so a lost response never starts (and reserves) a second task."""
+        body = research_body(
+            input, effort, output_schema, country, language, include_domains, exclude_domains, webhook_url
+        )
+        return TaskCreated.model_validate(self._json("POST", "/v1/research", body, idempotent=False))
+
+    def get_research(self, id: Id) -> ResearchTask:
+        """Current state of a research task (``progress`` while it runs, ``result`` once the
+        report is written; kept 24 h)."""
+        return ResearchTask.model_validate(self._json("GET", f"/v1/research/{path_id(id)}", None))
+
+    def cancel_research(self, id: Id) -> TaskCancelResponse:
+        """Cancel a research task: a queued one is refunded at once (``canceled``); a running one
+        stops at its next round (``canceling``) and is charged for the searches already run."""
+        return TaskCancelResponse.model_validate(self._json("DELETE", f"/v1/research/{path_id(id)}", None))
+
+    def wait_research(self, id: Id, *, timeout: float = 900.0, poll_interval: float = 3.0) -> ResearchTask:
+        """Poll (backing off up to 15 s) until the research task is ``completed``, ``failed`` or
+        ``canceled`` (a failed task is returned, not raised; check ``status`` and ``error``).
+        Raises :class:`TaskTimeoutError` after ``timeout`` (default 15 minutes)."""
+        return self._wait_task(self.get_research, id, timeout, poll_interval)
+
+    def answer(
+        self,
+        q: str,
+        *,
+        depth: Optional[AnswerDepth] = None,
+        num_sources: Optional[int] = None,
+        output_schema: Optional[Schema] = None,
+        **params: Unpack[AnswerParams],
+    ) -> AnswerResponse:
+        """A cited answer grounded on live Google results: Markdown with ``[n]`` markers in
+        ``res.answer`` and the cited sources in ``res.citations``.
+
+        ``depth="fast"`` answers from the result page; ``"standard"`` (default) also reads the top
+        ``num_sources`` (1-5, default 3) pages and costs more (https://serpkite.com/pricing;
+        ``meta.credits`` splits search and model).
+        With ``output_schema`` (a JSON Schema dict or a pydantic model class) the answer is a
+        JSON value in ``res.output`` and ``res.answer`` is ``None``. A failed model call raises
+        :class:`APIError` with code ``ai_unavailable`` (the model part is refunded); a search with
+        nothing to answer from returns ``answer=None`` and a ``meta.warnings`` entry.
+        """
+        body = answer_body(q, depth, num_sources, output_schema, params, stream=False)
+        # Billed even when the response is lost (a 503 ai_unavailable still charges the search
+        # part): no retry on 5xx or a read timeout.
+        raw = self._json("POST", "/v1/answer", body, idempotent=False, min_timeout=ANSWER_WAIT)
+        return AnswerResponse.model_validate(raw)
+
+    def answer_stream(
+        self,
+        q: str,
+        *,
+        depth: Optional[AnswerDepth] = None,
+        num_sources: Optional[int] = None,
+        **params: Unpack[AnswerParams],
+    ) -> Iterator[AnswerStreamEvent]:
+        """Stream an answer as it is written (Server-Sent Events).
+
+        Yields :class:`~serpkite.types.AnswerStreamResults` first (the numbered sources), then
+        :class:`~serpkite.types.AnswerStreamDelta` pieces of text, then one
+        :class:`~serpkite.types.AnswerStreamDone` with the final answer, citations and ``meta``
+        (total credits). The request is sent when iteration starts; closing the iterator early
+        closes the connection (the model part is then not charged). An ``error`` event raises
+        :class:`APIError` with its ``code`` (``ai_unavailable``). Can't take ``output_schema``.
+
+        >>> from serpkite.types import AnswerStreamDelta
+        >>> for ev in sk.answer_stream("what is retrieval-augmented generation"):
+        ...     if isinstance(ev, AnswerStreamDelta):
+        ...         print(ev.text, end="")
+        """
+        body = answer_body(q, depth, num_sources, None, params, stream=True)
+        response = self._send(
+            "POST", "/v1/answer", body, headers=STREAM_HEADERS, min_timeout=ANSWER_WAIT, stream=True
+        )
+        try:
+            if response.status_code >= 400:
+                raise from_response(response)
+            if response.headers.get("content-type", "").startswith("application/json"):
+                response.read()
+                yield from json_as_events(response.json())
+                return
+            try:
+                yield from iter_events(response.iter_lines())
+            except httpx.TimeoutException as exc:
+                raise APITimeoutError("the answer stream timed out") from exc
+            except httpx.TransportError as exc:
+                raise APIConnectionError(f"the answer stream failed: {exc}") from exc
+        finally:
+            response.close()
+
     def rank(self, q: str, domain: str, **params: Unpack[RankParams]) -> RankResponse:
         """Position of ``domain`` (subdomains match) for ``q`` in the top ``num`` results (default 100).
 
@@ -1123,12 +1269,13 @@ class AsyncSerpKite:
         idempotent: bool = True,
         headers: Optional[Mapping[str, str]] = None,
         min_timeout: Optional[float] = None,
+        stream: bool = False,
     ) -> httpx.Response:
         attempt = 0
         while True:
             request = self._config.build(self._http, method, path, json, headers, min_timeout)
             try:
-                response = await self._http.send(request)
+                response = await self._http.send(request, stream=stream)
             except httpx.TransportError as exc:
                 if attempt < self._config.max_retries and retryable_exception(exc, idempotent):
                     await _async_sleep(retry_delay(attempt, None))
@@ -1137,6 +1284,8 @@ class AsyncSerpKite:
                 if isinstance(exc, httpx.TimeoutException):
                     raise APITimeoutError(f"request to {path} timed out") from exc
                 raise APIConnectionError(f"could not reach {self._config.base_url}: {exc}") from exc
+            if stream and response.status_code >= 400:
+                await response.aread()  # should_retry and from_response read the error body
             if attempt < self._config.max_retries and should_retry(response, idempotent):
                 await response.aclose()
                 await _async_sleep(retry_delay(attempt, response))
@@ -1784,13 +1933,23 @@ class AsyncSerpKite:
         max_age: Optional[int] = None,
         country: Optional[str] = None,
         timeout: Optional[int] = None,
+        summary: bool = False,
+        output_schema: Optional[Schema] = None,
+        prompt: Optional[str] = None,
     ) -> ExtractResponse:
         """Read up to 20 URLs (HTML or PDF) as Markdown, text or HTML in one call.
 
         ``query`` + ``highlights`` (1-10) add the passages of each page most relevant to the
         query (BM25). 1 credit per URL that comes back (0.5 from cache); URLs that fail are
-        listed in ``failed`` and cost nothing. ``timeout`` (seconds, 1-90, default 50) reports pages
-        still loading as failed (``upstream_timeout``)."""
+        listed in ``failed`` and cost nothing. ``timeout`` (seconds, 1-90, default 50, 75 with
+        ``summary`` or ``output_schema``) reports pages still loading as failed
+        (``upstream_timeout``).
+
+        ``summary=True`` adds an AI summary of each page (``result.summary``, focused on ``query``
+        when set). ``output_schema`` (a JSON Schema dict or a pydantic model class; ``prompt``
+        guides it) returns each page's data as JSON in ``result.output``. Both cost extra per page
+        (https://serpkite.com/pricing); a page whose model step failed carries ``summary_error`` /
+        ``output_error`` instead and isn't charged for it."""
         body = clean(
             {
                 "urls": list(urls),
@@ -1803,12 +1962,14 @@ class AsyncSerpKite:
                 "max_age": max_age,
                 "country": country,
                 "timeout": timeout,
+                "summary": summary or None,
+                "output_schema": schema_dict(output_schema),
+                "prompt": prompt,
             }
         )
+        wait = extract_ai_wait(timeout, summary or output_schema is not None)
         # Billed per page even when the response is lost: no retry on 5xx or a read timeout.
-        raw = await self._json(
-            "POST", "/v1/extract", body, idempotent=False, min_timeout=extract_wait(timeout)
-        )
+        raw = await self._json("POST", "/v1/extract", body, idempotent=False, min_timeout=extract_wait(wait))
         return ExtractResponse.model_validate(raw)
 
     async def map(
@@ -1895,6 +2056,85 @@ class AsyncSerpKite:
     ) -> CrawlTask:
         """See :meth:`SerpKite.wait_for_crawl`."""
         return await self._wait_task(self.get_crawl, id, timeout, poll_interval)
+
+    async def research(
+        self,
+        input: str,
+        *,
+        effort: Optional[ResearchEffort] = None,
+        output_schema: Optional[Schema] = None,
+        country: Optional[str] = None,
+        language: Optional[str] = None,
+        include_domains: Optional[DomainList] = None,
+        exclude_domains: Optional[DomainList] = None,
+        webhook_url: Optional[str] = None,
+    ) -> TaskCreated:
+        """See :meth:`SerpKite.research`."""
+        body = research_body(
+            input, effort, output_schema, country, language, include_domains, exclude_domains, webhook_url
+        )
+        data = await self._json("POST", "/v1/research", body, idempotent=False)
+        return TaskCreated.model_validate(data)
+
+    async def get_research(self, id: Id) -> ResearchTask:
+        """See :meth:`SerpKite.get_research`."""
+        return ResearchTask.model_validate(await self._json("GET", f"/v1/research/{path_id(id)}", None))
+
+    async def cancel_research(self, id: Id) -> TaskCancelResponse:
+        """See :meth:`SerpKite.cancel_research`."""
+        data = await self._json("DELETE", f"/v1/research/{path_id(id)}", None)
+        return TaskCancelResponse.model_validate(data)
+
+    async def wait_research(
+        self, id: Id, *, timeout: float = 900.0, poll_interval: float = 3.0
+    ) -> ResearchTask:
+        """See :meth:`SerpKite.wait_research`."""
+        return await self._wait_task(self.get_research, id, timeout, poll_interval)
+
+    async def answer(
+        self,
+        q: str,
+        *,
+        depth: Optional[AnswerDepth] = None,
+        num_sources: Optional[int] = None,
+        output_schema: Optional[Schema] = None,
+        **params: Unpack[AnswerParams],
+    ) -> AnswerResponse:
+        """See :meth:`SerpKite.answer`."""
+        body = answer_body(q, depth, num_sources, output_schema, params, stream=False)
+        raw = await self._json("POST", "/v1/answer", body, idempotent=False, min_timeout=ANSWER_WAIT)
+        return AnswerResponse.model_validate(raw)
+
+    async def answer_stream(
+        self,
+        q: str,
+        *,
+        depth: Optional[AnswerDepth] = None,
+        num_sources: Optional[int] = None,
+        **params: Unpack[AnswerParams],
+    ) -> AsyncIterator[AnswerStreamEvent]:
+        """See :meth:`SerpKite.answer_stream` (``async for ev in sk.answer_stream(q)``)."""
+        body = answer_body(q, depth, num_sources, None, params, stream=True)
+        response = await self._send(
+            "POST", "/v1/answer", body, headers=STREAM_HEADERS, min_timeout=ANSWER_WAIT, stream=True
+        )
+        try:
+            if response.status_code >= 400:
+                raise from_response(response)
+            if response.headers.get("content-type", "").startswith("application/json"):
+                await response.aread()
+                for ev in json_as_events(response.json()):
+                    yield ev
+                return
+            try:
+                async for ev in aiter_events(response.aiter_lines()):
+                    yield ev
+            except httpx.TimeoutException as exc:
+                raise APITimeoutError("the answer stream timed out") from exc
+            except httpx.TransportError as exc:
+                raise APIConnectionError(f"the answer stream failed: {exc}") from exc
+        finally:
+            await response.aclose()
 
     async def rank(self, q: str, domain: str, **params: Unpack[RankParams]) -> RankResponse:
         """Position of ``domain`` (subdomains match) for ``q`` in the top ``num`` results (default 100).

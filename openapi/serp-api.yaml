@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SerpKite SERP API
-  version: 1.9.0
+  version: 1.10.0
   description: |
     Public search API (api.serpkite.com). Google results as clean JSON or Markdown
     for AI agents, plus a Google Custom Search–compatible endpoint. Official SDKs:
@@ -48,6 +48,14 @@ info:
     batches ×0.5 (from 2026-11-23 a batch depth request is 0.5 per page with
     results, without the bundle cap: `num=100` = 5); cache hit via `max_age` ×0.5. `engine=consensus` (search only) =
     the sum of one page per provider that returned results.
+
+    **AI** (Claude writes, OpenAI's Decisions API runs typed checks; a failed
+    model step is never billed): an answer (`include_answer` on `/v1/search` and
+    `/v1/news`, the model part of `/v1/answer`) = +2 over the result page, +4
+    when it read pages (`include_content`, `/v1/answer` depth=standard);
+    `/v1/extract` `summary` = +4 and `output_schema` = +4 per page;
+    `/v1/research` = lite 30, standard 75, deep 200. Responses that used a
+    model carry `meta.llm`.
 servers:
   - url: https://api.serpkite.com
   - url: http://localhost:8080
@@ -110,6 +118,7 @@ paths:
         - { name: start_date, in: query, schema: { type: string, format: date } }
         - { name: end_date, in: query, schema: { type: string, format: date } }
         - { name: highlights, in: query, schema: { type: boolean }, description: Needs include_content }
+        - { name: include_answer, in: query, schema: { type: boolean }, description: Add a cited AI answer (+2 credits; +4 with include_content) }
         - { name: api_key, in: query, schema: { type: string } }
       responses:
         "200": { $ref: "#/components/responses/SearchOK" }
@@ -316,12 +325,21 @@ paths:
         "503": { $ref: "#/components/responses/Unavailable" }
   /v1/extract:
     post:
-      summary: Up to 20 URLs (HTML or PDF) as Markdown, text or HTML, with query-ranked highlights, links and images (1 credit per URL read)
+      summary: Up to 20 URLs (HTML or PDF) as Markdown, text or HTML, with query-ranked highlights, links, images, an AI summary or JSON extracted with a schema (1 credit per URL read)
       operationId: extract
       description: |
         Every URL is billed only when it comes back: 1 credit, 0.5 from cache. URLs that
         fail are listed in `failed` and cost nothing. The response is `200` even when every
         URL failed. Highlights are ranked with BM25 (lexical, no model).
+
+        **AI:** `summary: true` adds a 3–6 sentence summary of each page (+4 credits per
+        page); `output_schema` (a JSON Schema, at most 16 KB, optionally guided by
+        `prompt`) returns each page's data as JSON in `output` (+4 credits per page).
+        Claude Haiku writes both; a schema whose fields are all booleans or enums is
+        answered by a decision model instead (always valid against the schema). A
+        summary or extraction that fails is reported in `summary_error` /
+        `output_error` and not charged. With either, `timeout` defaults to 75 seconds
+        and the last 25 are kept for the model.
       requestBody:
         required: true
         content:
@@ -416,6 +434,153 @@ paths:
       summary: Cancel a crawl. A queued crawl is canceled and refunded at once; a running one stops at its next checkpoint and is charged for the pages read
       description: "`404` when there is no such crawl, `409` when it already finished."
       operationId: cancelCrawl
+      responses:
+        "200": { $ref: "#/components/responses/TaskCanceled" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /v1/answer:
+    post:
+      summary: A cited answer grounded on live Google results, written by Claude (fast = 1 + 2 credits; standard = 1 + 1 per page read + 4)
+      operationId: answer
+      description: |
+        Runs the query on Google, then Claude (Haiku by default) writes a concise answer
+        that cites the numbered `results` with `[n]` markers. `depth=fast` answers from
+        the result page (snippets, answer box, knowledge panel); `depth=standard`
+        (default) also reads the top `num_sources` pages and answers from their
+        query-ranked passages. Sources are untrusted: instructions inside pages are
+        ignored.
+
+        **Billing:** the search part is priced like `/v1/search` with `include_content`
+        (1 credit + 1 per page read, cache rules as usual); the model adds 2 credits at
+        `fast` and 4 when it read pages (`standard`; 2 if no page could be read).
+        `meta.credits` splits the two. When the model fails the answer part is refunded
+        (`503 ai_unavailable`); a search that returned nothing to answer from is answered
+        with `answer: null`, a warning, and no model charge.
+
+        **Structured output:** with `output_schema` (a JSON Schema, at most 16 KB) the
+        answer is a JSON value in `output` (and `answer` is null). Can't be combined
+        with `stream`.
+
+        **Streaming:** `stream: true` returns `text/event-stream` with these events, in
+        order: `results` (`{request, results}`), `delta` (`{text}`, repeated), then
+        `done` (`{answer, citations, meta}`) or `error` (`{error}`). Billing headers on a
+        stream carry the search part only; the final `meta` has the total.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AnswerRequest" }
+            example: { q: "what is retrieval-augmented generation", depth: standard, num_sources: 3 }
+      responses:
+        "200":
+          description: OK (`text/event-stream` when `stream` is true)
+          headers:
+            X-Credits-Used: { $ref: "#/components/headers/CreditsUsed" }
+            X-Credits-Remaining: { $ref: "#/components/headers/CreditsRemaining" }
+            X-Cost-USD: { $ref: "#/components/headers/CostUSD" }
+            X-Cache: { $ref: "#/components/headers/Cache" }
+            X-Latency-Ms: { $ref: "#/components/headers/LatencyMs" }
+            X-Tokens-Estimate: { $ref: "#/components/headers/TokensEstimate" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AnswerResponse" }
+              example:
+                request: { endpoint: answer, engine: google, q: "what is retrieval-augmented generation", country: us, language: en, num: 10, page: 1, autocorrect: true, device: desktop, include_content: 3, depth: standard, num_sources: 3 }
+                answer: "Retrieval-augmented generation (RAG) grounds a language model's answer in documents retrieved at query time [1], which reduces hallucinations and keeps answers current [2]."
+                citations:
+                  - { index: 1, title: "Retrieval-augmented generation", link: "https://en.wikipedia.org/wiki/Retrieval-augmented_generation", domain: en.wikipedia.org }
+                  - { index: 2, title: "What is RAG?", link: "https://www.ibm.com/think/topics/retrieval-augmented-generation", domain: ibm.com }
+                results:
+                  - { index: 1, title: "Retrieval-augmented generation", link: "https://en.wikipedia.org/wiki/Retrieval-augmented_generation", domain: en.wikipedia.org }
+                  - { index: 2, title: "What is RAG?", link: "https://www.ibm.com/think/topics/retrieval-augmented-generation", domain: ibm.com }
+                meta:
+                  request_id: req_01J9
+                  credits_used: 6
+                  credits: { search: 4, answer: 2 }
+                  cached: false
+                  engine: google
+                  latency_ms: 4410
+                  llm: { provider: anthropic, model: claude-haiku-5-5, input_tokens: 3120, output_tokens: 88 }
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  Server-Sent Events. Each event is `event: <name>\ndata: <JSON>\n\n`:
+                  `results` → AnswerStreamResults, `delta` → AnswerStreamDelta,
+                  `done` → AnswerStreamDone, `error` → Error.
+              example: |
+                event: results
+                data: {"request":{"endpoint":"answer","q":"what is retrieval-augmented generation"},"results":[{"index":1,"title":"Retrieval-augmented generation","link":"https://en.wikipedia.org/wiki/Retrieval-augmented_generation","domain":"en.wikipedia.org"}]}
+
+                event: delta
+                data: {"text":"Retrieval-augmented generation grounds "}
+
+                event: done
+                data: {"answer":"Retrieval-augmented generation grounds a model's answer in documents retrieved at query time [1].","citations":[{"index":1,"title":"Retrieval-augmented generation","link":"https://en.wikipedia.org/wiki/Retrieval-augmented_generation","domain":"en.wikipedia.org"}],"meta":{"request_id":"req_01J9","credits_used":3,"cached":false}}
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "402": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /v1/research:
+    post:
+      summary: Start an async deep-research task — planned searches, page reading, a cited Markdown report written by Claude (lite 30, standard 75, deep 200 credits)
+      operationId: createResearch
+      description: |
+        Claude plans Google queries for `input`, the pages they find are read and
+        ranked, a decision model checks whether the notes already cover the task (and
+        drops off-topic sources), Claude reviews gaps and plans follow-up rounds, then
+        writes a Markdown report citing numbered sources (and, with `output_schema`, a
+        JSON value in `output`).
+
+        | effort | credits | first-round queries | rounds | pages per query |
+        |---|---:|---:|---:|---:|
+        | lite | 30 | 3 | 1 | 2 |
+        | standard | 75 | 5 | 2 | 3 |
+        | deep | 200 | 8 | 3 | 4 |
+
+        The flat price is reserved at enqueue and charged only when the report is
+        written; failed research is refunded. A canceled task is charged 1 credit per
+        search already run. Returns `202`; poll `GET /v1/research/{id}` or wait for the
+        signed `research.completed` webhook. At most 20 crawl and research tasks per
+        account may be queued or running at once (`429`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResearchRequest" }
+            example: { input: "compare espresso machines under $500 for a small office", effort: standard, output_schema: { type: object, properties: { winner: { type: string } } } }
+      responses:
+        "202": { $ref: "#/components/responses/TaskAccepted" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "402": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /v1/research/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: Poll a research task (kept for 24 hours)
+      operationId: getResearch
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResearchTask" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+    delete:
+      summary: Cancel a research task. A queued task is refunded at once; a running one stops at its next round and is charged for the searches run
+      description: "`404` when there is no such task, `409` when it already finished."
+      operationId: cancelResearch
       responses:
         "200": { $ref: "#/components/responses/TaskCanceled" }
         "401": { $ref: "#/components/responses/Error" }
@@ -621,7 +786,8 @@ paths:
         Credits for the whole batch are reserved together: if the balance, spend cap, key limit or
         free daily cap can't cover every valid request, none is queued and each gets the error
         (invalid requests get their own 400 entry either way). Each job is settled and refunded on
-        its own once it runs.
+        its own once it runs. Half price applies to the search part; an AI surcharge
+        (`include_answer`) is charged in full.
 
         **Retries.** Send an `Idempotency-Key` to make the call safe to retry: for 24 hours a
         repeat with the same key and the same body returns the first response (with
@@ -793,6 +959,21 @@ webhooks:
         webhooks: `X-SerpKite-Event: crawl.completed`, `X-SerpKite-Delivery` (the task id),
         `X-SerpKite-Timestamp` and `X-SerpKite-Signature: v1=<hex HMAC-SHA256(secret,
         "<timestamp>.<raw body>")>`. Retried with backoff until a 2xx.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TaskCompletedEvent" }
+      responses:
+        "200": { description: Any 2xx acknowledges the delivery }
+  research.completed:
+    post:
+      operationId: researchCompletedWebhook
+      summary: A research task finished (completed, failed or canceled)
+      description: |
+        Sent to the task's `webhook_url` (or the account webhook), signed like
+        `crawl.completed` with `X-SerpKite-Event: research.completed`. `result` is the
+        ResearchResult.
       requestBody:
         required: true
         content:
@@ -1073,6 +1254,7 @@ components:
         start_date: { type: string, format: date, description: "Only results published on or after this date, YYYY-MM-DD (search, news, images, videos). Can't be combined with time or tbs. A fallback engine without date ranges is skipped" }
         end_date: { type: string, format: date, description: "Only results published on or before this date, YYYY-MM-DD. Can't be combined with time or tbs" }
         highlights: { type: boolean, default: false, description: "Return up to 3 query-ranked passages (`highlights`) of each page read by include_content instead of the whole page (search only; needs include_content; no extra credits)" }
+        include_answer: { type: boolean, default: false, description: "Add a cited AI `answer` written by Claude over this response's results (search and news; +2 credits, +4 when it read pages via `include_content`; refunded with a `meta.warnings` entry when the model fails)" }
 
     DomainList:
       description: >-
@@ -1170,7 +1352,13 @@ components:
         include_images: { type: boolean, default: false }
         max_age: { type: integer, minimum: 0, maximum: 2592000, description: Accept a cached page up to this many seconds old (0.5 credit) }
         country: { type: string, description: Fetch through an exit in this country (ISO 3166-1 alpha-2) }
-        timeout: { type: integer, minimum: 1, maximum: 90, default: 50, description: "Seconds to wait for the pages; a page still loading is listed in `failed` (`upstream_timeout`, not charged)" }
+        timeout: { type: integer, minimum: 1, maximum: 90, default: 50, description: "Seconds to wait for the pages; a page still loading is listed in `failed` (`upstream_timeout`, not charged). Default 75 with summary or output_schema" }
+        summary: { type: boolean, default: false, description: "Add a 3-6 sentence AI summary of each page (+4 credits per page; focused on `query` when set)" }
+        output_schema:
+          type: object
+          additionalProperties: true
+          description: "A JSON Schema (at most 16 KB): each page's data is returned as JSON matching it in `output` (+4 credits per page)"
+        prompt: { type: string, maxLength: 4096, description: "Guides output_schema extraction (what to pick, how to normalise); needs output_schema" }
 
     ExtractResult:
       type: object
@@ -1188,6 +1376,10 @@ components:
         links: { type: array, items: { $ref: "#/components/schemas/PageLink" }, description: include_links=true only }
         images: { type: array, items: { type: string }, description: include_images=true only }
         highlights: { type: array, items: { $ref: "#/components/schemas/Highlight" }, description: highlights > 0 only }
+        summary: { type: [string, "null"], description: "summary=true only (null when it failed)" }
+        summary_error: { type: string }
+        output: { description: "output_schema only: the JSON value matching the schema (null when it failed)" }
+        output_error: { type: string }
 
     ExtractFailure:
       type: object
@@ -1224,6 +1416,176 @@ components:
             latency_ms: { type: integer }
             succeeded: { type: integer }
             failed: { type: integer }
+            llm: { $ref: "#/components/schemas/LLMUsage" }
+
+    AnswerRequest:
+      type: object
+      required: [q]
+      properties:
+        q: { type: string, minLength: 1, maxLength: 2048 }
+        depth:
+          type: string
+          enum: [fast, standard]
+          default: standard
+          description: "`fast` answers from the result page (1 + 2 credits); `standard` also reads the top `num_sources` pages (1 + 1 per page + 4 credits)"
+        num_sources: { type: integer, minimum: 1, maximum: 5, default: 3, description: Pages read (depth=standard only) }
+        stream: { type: boolean, default: false, description: "Send Server-Sent Events (`results`, `delta`…, `done` | `error`) instead of one JSON body" }
+        output_schema:
+          type: object
+          additionalProperties: true
+          description: A JSON Schema (at most 16 KB). The answer becomes a JSON value in `output`. Not with stream
+        country: { type: string, default: us }
+        language: { type: string, default: en }
+        location: { type: string }
+        uule: { type: string }
+        time: { type: string, enum: [hour, day, week, month, year] }
+        tbs: { type: string }
+        device: { type: string, enum: [desktop, mobile], default: desktop }
+        safe: { type: string, enum: [active, off], default: off }
+        autocorrect: { type: boolean, default: true }
+        max_age: { type: integer, minimum: 0, description: Accept a cached search up to this many seconds old }
+        engine: { $ref: "#/components/schemas/EngineParam" }
+        include_domains: { $ref: "#/components/schemas/DomainList" }
+        exclude_domains: { $ref: "#/components/schemas/DomainList" }
+        boost_domains: { $ref: "#/components/schemas/DomainList" }
+        start_date: { type: string, format: date }
+        end_date: { type: string, format: date }
+
+    AnswerSource:
+      type: object
+      description: A result the answer may cite, numbered as in the prompt (`[index]`)
+      required: [index, title, link]
+      properties:
+        index: { type: integer }
+        title: { type: string }
+        link: { type: string }
+        domain: { type: string }
+        date: { type: string, description: "Publish date (ISO 8601 when known, else as shown)" }
+
+    AnswerMeta:
+      allOf:
+        - $ref: "#/components/schemas/Meta"
+        - type: object
+          properties:
+            credits:
+              type: object
+              description: "`credits_used` split into the search and the model part"
+              properties:
+                search: { type: number }
+                answer: { type: number }
+
+    AnswerResponse:
+      type: object
+      required: [request, answer, citations, results, meta]
+      properties:
+        request: { $ref: "#/components/schemas/RequestEcho" }
+        answer: { type: [string, "null"], description: "Markdown with `[n]` citation markers. Null with output_schema, or when there was nothing to answer from" }
+        output: { description: "output_schema only: the JSON value matching the schema" }
+        citations: { type: array, items: { $ref: "#/components/schemas/Citation" }, description: "The sources the answer cites, in first-cited order" }
+        results: { type: array, items: { $ref: "#/components/schemas/AnswerSource" } }
+        meta: { $ref: "#/components/schemas/AnswerMeta" }
+
+    AnswerStreamResults:
+      type: object
+      description: "`event: results`, sent first"
+      required: [request, results]
+      properties:
+        request: { $ref: "#/components/schemas/RequestEcho" }
+        results: { type: array, items: { $ref: "#/components/schemas/AnswerSource" } }
+
+    AnswerStreamDelta:
+      type: object
+      description: "`event: delta`: the next piece of answer text"
+      required: [text]
+      properties:
+        text: { type: string }
+
+    AnswerStreamDone:
+      type: object
+      description: "`event: done`, sent last: the final answer (citation markers checked) and meta with the total credits"
+      required: [answer, citations, meta]
+      properties:
+        answer: { type: string }
+        citations: { type: array, items: { $ref: "#/components/schemas/Citation" } }
+        meta: { $ref: "#/components/schemas/AnswerMeta" }
+
+    ResearchRequest:
+      type: object
+      required: [input]
+      properties:
+        input: { type: string, minLength: 1, maxLength: 8000, description: "The research task in plain words (`q` is accepted as an alias)" }
+        effort: { type: string, enum: [lite, standard, deep], default: standard, description: "lite = 30, standard = 75, deep = 200 credits" }
+        output_schema:
+          type: object
+          additionalProperties: true
+          description: A JSON Schema (at most 16 KB); the report is also returned as a JSON value in `result.output`
+        country: { type: string }
+        language: { type: string }
+        include_domains: { type: array, items: { type: string }, maxItems: 20 }
+        exclude_domains: { type: array, items: { type: string }, maxItems: 20 }
+        webhook_url: { type: string, format: uri, description: "Receives the signed `research.completed` event. Defaults to the account webhook" }
+
+    ResearchSource:
+      type: object
+      required: [index, title, link]
+      properties:
+        index: { type: integer }
+        title: { type: string }
+        link: { type: string }
+        domain: { type: string }
+        published_at: { type: string }
+        query: { type: string, description: The query that found it }
+
+    ResearchResult:
+      type: object
+      required: [input, effort, report, citations, sources, queries]
+      properties:
+        input: { type: string }
+        effort: { type: string, enum: [lite, standard, deep] }
+        report: { type: string, description: "Markdown report with `[n]` citation markers" }
+        citations: { type: array, items: { $ref: "#/components/schemas/Citation" } }
+        sources: { type: array, items: { $ref: "#/components/schemas/ResearchSource" } }
+        queries: { type: array, items: { type: string }, description: Every search the research ran }
+        stats:
+          type: object
+          properties:
+            searches: { type: integer }
+            sources: { type: integer }
+            rounds: { type: integer }
+        llm: { $ref: "#/components/schemas/LLMUsage" }
+        output: { description: "output_schema only: the JSON value (null when it could not be produced)" }
+        output_error: { type: string }
+
+    ResearchTask:
+      type: object
+      required: [id, kind, status, created_at, credits_reserved, credits_used]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, const: research }
+        status: { $ref: "#/components/schemas/TaskStatus" }
+        created_at: { type: string, format: date-time }
+        started_at: { type: [string, "null"], format: date-time }
+        completed_at: { type: [string, "null"], format: date-time }
+        credits_reserved: { type: number }
+        credits_used: { type: number }
+        webhook_status: { type: [string, "null"], enum: [pending, delivered, failed, null] }
+        progress:
+          type: [object, "null"]
+          additionalProperties: true
+          properties:
+            round: { type: integer }
+            rounds: { type: integer }
+            queries: { type: integer }
+            sources: { type: integer }
+            step: { type: string, enum: [searching, reviewing, writing] }
+        result:
+          description: Set once the report is written (a failed or canceled task may carry only `queries`)
+          anyOf:
+            - $ref: "#/components/schemas/ResearchResult"
+            - type: object
+              additionalProperties: true
+            - type: "null"
+        error: { $ref: "#/components/schemas/TaskError" }
 
     CrawlRequest:
       type: object
@@ -1257,7 +1619,7 @@ components:
       required: [id, kind, status, created_at, poll_url, credits_reserved]
       properties:
         id: { type: string, format: uuid }
-        kind: { type: string, enum: [crawl] }
+        kind: { type: string, enum: [crawl, research] }
         status: { $ref: "#/components/schemas/TaskStatus" }
         created_at: { type: string, format: date-time }
         poll_url: { type: string }
@@ -1456,6 +1818,37 @@ components:
         resolved_urls: { type: boolean }
         parse_quality: { type: string, enum: [ok, partial, empty] }
         latency_ms: { type: integer }
+        llm: { $ref: "#/components/schemas/LLMUsage" }
+        warnings:
+          type: array
+          items: { type: string }
+          description: Non-fatal problems, e.g. an include_answer that failed (and was refunded)
+
+    LLMUsage:
+      type: object
+      description: The model that wrote this response's AI part and the tokens it used
+      properties:
+        provider: { type: string, examples: [anthropic, openai] }
+        model: { type: string, examples: [claude-haiku-5-5, gpt-6-luna] }
+        input_tokens: { type: integer }
+        output_tokens: { type: integer }
+
+    Citation:
+      type: object
+      required: [index, title, link]
+      properties:
+        index: { type: integer, description: "The `[n]` marker used in the text (1-based source number)" }
+        title: { type: string }
+        link: { type: string }
+        domain: { type: string }
+
+    SearchAnswer:
+      type: object
+      description: "include_answer: a cited answer over this response's results"
+      required: [text, citations]
+      properties:
+        text: { type: string, description: "Markdown with `[n]` citation markers (n = the numbered sources: answer box, knowledge panel, then results)" }
+        citations: { type: array, items: { $ref: "#/components/schemas/Citation" } }
 
     RequestEcho:
       type: object
@@ -1493,6 +1886,7 @@ components:
         exclude_domains: { type: array, items: { type: string } }
         boost_domains: { type: array, items: { type: string } }
         highlights: { type: boolean }
+        include_answer: { type: boolean }
 
     Sitelink:
       type: object
@@ -1578,6 +1972,7 @@ components:
         related_searches: { type: array, items: { $ref: "#/components/schemas/RelatedSearch" } }
         top_stories: { type: array, items: { $ref: "#/components/schemas/NewsResult" } }
         places: { type: array, items: { $ref: "#/components/schemas/PlaceResult" } }
+        answer: { $ref: "#/components/schemas/SearchAnswer" }
         meta: { $ref: "#/components/schemas/Meta" }
 
     ImageResult:
@@ -1643,6 +2038,7 @@ components:
       properties:
         request: { $ref: "#/components/schemas/RequestEcho" }
         results: { type: array, items: { $ref: "#/components/schemas/NewsResult" } }
+        answer: { $ref: "#/components/schemas/SearchAnswer" }
         meta: { $ref: "#/components/schemas/Meta" }
 
     PlaceResult:
@@ -2008,18 +2404,18 @@ components:
 
     TaskCompletedEvent:
       type: object
-      description: "Body of `crawl.completed`"
+      description: "Body of `crawl.completed` and `research.completed`"
       required: [event, id, kind, status, created_at, credits_used]
       properties:
-        event: { type: string, const: crawl.completed }
+        event: { type: string, enum: [crawl.completed, research.completed] }
         id: { type: string, format: uuid }
-        kind: { type: string, const: crawl }
+        kind: { type: string, enum: [crawl, research] }
         status: { $ref: "#/components/schemas/TaskStatus" }
         created_at: { type: string, format: date-time }
         completed_at: { type: [string, "null"], format: date-time }
         credits_used: { type: number }
         poll_url: { type: string, description: Where the task (and its full result) can be fetched for 24 hours }
-        result: { description: "The CrawlResult (null when the crawl failed without one, or when it is larger than 4 MB: see result_omitted)" }
+        result: { description: "The CrawlResult or ResearchResult (null when the task failed without one, or when it is larger than 4 MB: see result_omitted)" }
         result_omitted: { type: boolean, description: "Set when the result was too large for the webhook; GET poll_url for it" }
         error:
           type: object

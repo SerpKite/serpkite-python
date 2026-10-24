@@ -57,7 +57,8 @@ with SerpKite() as sk:  # closes the HTTP client on exit
 Every query vertical takes `q` plus optional keyword parameters: `country`, `language`,
 `location`, `uule`, `num`, `page`, `time` (`hour|day|week|month|year`), `tbs`, `device`, `safe`,
 `autocorrect`, `ads`, `max_age`, `engine` (see
-[Search engines & fallback](#search-engines--fallback)) and `include_content` (search only).
+[Search engines & fallback](#search-engines--fallback)), `include_content` (search only) and
+`include_answer` (search and news, see [AI answers](#ai-answers)).
 
 | Method | Endpoint | Returns |
 | --- | --- | --- |
@@ -75,9 +76,12 @@ Every query vertical takes `q` plus optional keyword parameters: `country`, `lan
 | `sk.autocomplete(q, **params)` | `/v1/autocomplete` | `AutocompleteResponse` |
 | `sk.webpage(url, include_html=False)` | `/v1/webpage` | `WebpageResponse` (`markdown`, `text`, `metadata`) |
 | `sk.rank(q, domain, num=100)` | `/v1/rank` | `RankResponse` (`position` or `None`, `matches`) |
-| `sk.extract(urls, query=, highlights=, format=, …)` | `/v1/extract` | `ExtractResponse` (`results`, `failed`) |
+| `sk.answer(q, depth=, num_sources=, output_schema=, **params)` | `/v1/answer` | `AnswerResponse` (`answer`, `citations`, `results`, `output`) |
+| `sk.answer_stream(q, depth=, num_sources=, **params)` | `/v1/answer` (SSE) | iterator of `AnswerStreamResults`, `AnswerStreamDelta`…, `AnswerStreamDone` |
+| `sk.extract(urls, query=, highlights=, format=, summary=, output_schema=, prompt=, …)` | `/v1/extract` | `ExtractResponse` (`results`, `failed`) |
 | `sk.map(url, search=, limit=, sitemap=, include_paths=, …)` | `/v1/map` | `MapResponse` (`results[].url`) |
 | `sk.crawl(url, limit=, max_depth=, …)` / `get_crawl` / `cancel_crawl` / `wait_for_crawl` | `/v1/crawl` | see [Crawl](#crawl) |
+| `sk.research(input, effort=, output_schema=, …)` / `get_research` / `cancel_research` / `wait_research` | `/v1/research` | see [Research](#research) |
 | `sk.monitors.create / list / get / update / delete / run / runs / iter_runs` | `/v1/monitors` | see [Monitors](#monitors) |
 | `sk.account()` | `/v1/account` | `Account` (balance, limits, month usage) |
 | `sk.batches.create / get / wait` | `/v1/batches` | see [Batches](#batches) |
@@ -196,7 +200,7 @@ Every API error raises a `serpkite.SerpKiteError` with `status`, `code`, `messag
 | `PermissionDeniedError` | 403 | `spend_cap_reached`, `key_limit_reached`, `forbidden` |
 | `NotFoundError` | 404 | `not_found` |
 | `RateLimitError` | 429 | `rate_limited`, `daily_limit_reached` (has `.retry_after`) |
-| `APIError` | 5xx | `upstream_error`, `upstream_blocked`, `upstream_timeout`, `unavailable` (all 503) |
+| `APIError` | 5xx | `upstream_error`, `upstream_blocked`, `upstream_timeout`, `unavailable`, `ai_unavailable` (all 503) |
 | `APIConnectionError` / `APITimeoutError` | none | the request never got a response |
 
 ```python
@@ -213,7 +217,84 @@ except serpkite.SerpKiteError as e:
 Failed, empty and blocked searches are not billed. The client retries 429s, 5xx responses and
 connection errors up to `max_retries` times. It uses exponential backoff with jitter and honours
 `Retry-After`. It never retries `daily_limit_reached`. Batch creation is retried only when the
-request provably never reached the server, unless you pass `idempotency_key`.
+request provably never reached the server, unless you pass `idempotency_key`. `extract`, `answer`,
+`crawl` and `research` are billed even when the response is lost, so they are retried only on 429
+and connection failures; `answer` and `answer_stream` wait at least 100 s for the response (the
+search runs before the model writes).
+
+## AI answers
+
+```python
+from serpkite.types import AnswerStreamDelta, AnswerStreamDone
+
+# A cited answer grounded on live Google results ("fast" answers from the result page;
+# "standard", the default, also reads the top num_sources pages)
+res = sk.answer("what is retrieval-augmented generation", depth="fast")
+print(res.answer)  # Markdown with [1] markers
+for c in res.citations:
+    print(c.index, c.title, c.link)
+print(res.meta.credits, res.meta.llm)  # search/answer split, model and tokens
+
+# Stream it: the numbered sources first, then text deltas, then the final answer
+for ev in sk.answer_stream("what is retrieval-augmented generation"):
+    if isinstance(ev, AnswerStreamDelta):
+        print(ev.text, end="", flush=True)
+    elif isinstance(ev, AnswerStreamDone):
+        print("\n", [c.link for c in ev.citations])
+
+# Structured output: a JSON Schema dict or a pydantic model class (not with streaming)
+from pydantic import BaseModel
+
+class Building(BaseModel):
+    name: str
+    height_m: float
+
+facts = sk.answer("tallest building in the world", output_schema=Building)
+print(Building.model_validate(facts.output))
+
+# A cited answer on top of a normal search or news response
+news = sk.news("ECB rate decision", time="day", include_answer=True)
+print(news.answer.text if news.answer else news.meta.warnings)  # refunded with a warning if it failed
+
+# Summaries or JSON per page
+pages = sk.extract(["https://example.com/pricing"], summary=True,
+                   output_schema={"type": "object", "properties": {"price": {"type": "number"}}})
+print(pages.results[0].summary, pages.results[0].output)
+```
+
+- A model failure raises `APIError` with code `ai_unavailable` (503); the model part is refunded.
+  In a stream it arrives as an `error` event and is raised the same way. Closing the iterator
+  early closes the connection, and the model part is not charged. `AsyncSerpKite.answer_stream`
+  is an async iterator (`async for ev in sk.answer_stream(q)`).
+- `extract`: `summary=True` and `output_schema` (+ optional `prompt`) each cost extra per page; a
+  page whose model step failed has `summary_error` / `output_error` instead and isn't charged for
+  it. Its default `timeout` becomes 75 seconds with either.
+- AI prices (answers, `include_answer`, summaries, schema extraction, research) are listed at
+  [serpkite.com/pricing](https://serpkite.com/pricing); `meta.credits` on an answer splits the
+  search and the model part.
+
+## Research
+
+```python
+task = sk.research(
+    "Compare managed Postgres vector search options in 2026",
+    effort="standard",  # lite | standard (default) | deep
+)
+done = sk.wait_research(task.id)  # completed, failed or canceled (15 min default timeout)
+if done.status == "completed" and done.result:
+    print(done.result.report)  # Markdown with [n] citations
+    for src in done.result.sources:
+        print(src.index, src.link, src.query)
+```
+
+- Each `effort` has a flat price ([serpkite.com/pricing](https://serpkite.com/pricing)), reserved
+  up front and charged only when the report is written; failed research is refunded. `research` is only retried on 429.
+- `get_research(id)` shows `progress` (`round`, `queries`, `sources`, `step`) while it runs.
+  `cancel_research(id)` refunds a queued task; a running one stops at its next round and is charged
+  for the searches already run.
+- `output_schema` (a dict or a pydantic model class) also returns the report as JSON in
+  `result.output`; `include_domains` / `exclude_domains`, `country` and `language` steer the
+  searches. Pass `webhook_url=` to get a signed `research.completed` delivery instead of polling.
 
 ## Map and extract
 
@@ -307,7 +388,7 @@ Pass `idempotency_key=` (e.g. a UUID you store with the batch) to make `create` 
 24 hours the server replays the first response for the same key and body, so the client then also
 retries 5xx and connection errors.
 
-Webhook deliveries (`batch.completed`, `crawl.completed`, `monitor.results`) are always signed.
+Webhook deliveries (`batch.completed`, `crawl.completed`, `research.completed`, `monitor.results`) are always signed.
 Check one with the raw body, then parse it into a typed event:
 
 ```python
@@ -320,7 +401,7 @@ if not verify_webhook(os.environ["SERPKITE_WEBHOOK_SECRET"], body, request.heade
 event = parse_webhook(body, request.headers)
 if isinstance(event, MonitorResultsEvent):  # dedupe retries on event.run_id
     print(event.name, len(event.new_results))
-elif isinstance(event, TaskCompletedEvent):  # crawl.completed
+elif isinstance(event, TaskCompletedEvent):  # crawl.completed or research.completed (event.kind)
     print(event.status, event.poll_url)
 ```
 

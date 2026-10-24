@@ -15,10 +15,18 @@ from typing_extensions import TypedDict
 from ._models import (
     Account,
     AnswerBox,
+    AnswerMeta,
+    AnswerRequest,
+    AnswerResponse,
+    AnswerSource,
+    AnswerStreamDelta,
+    AnswerStreamDone,
+    AnswerStreamResults,
     AutocompleteResponse,
     Batch,
     BatchCreateRequest,
     BatchCreateResponse,
+    Citation,
     CrawlPage,
     CrawlRequest,
     CrawlResult,
@@ -33,6 +41,7 @@ from ._models import (
     ImageResult,
     ImagesResponse,
     KnowledgeGraph,
+    LLMUsage,
     MapRequest,
     MapResponse,
     MapURL,
@@ -62,12 +71,17 @@ from ._models import (
     RankResponse,
     RelatedSearch,
     RequestEcho,
+    ResearchRequest,
+    ResearchResult,
+    ResearchSource,
+    ResearchTask,
     ReviewResult,
     ReviewsRequest,
     ReviewsResponse,
     RouteStep,
     ScholarResponse,
     ScholarResult,
+    SearchAnswer,
     SearchRequest,
     SearchResponse,
     ShoppingResponse,
@@ -85,6 +99,7 @@ from ._models import (
     WebpageResponse,
     WeeklyHours,
 )
+from ._models import Credits as AnswerCredits
 from ._models import Endpoint as StatusEndpoint
 from ._models import Error as ErrorResponse
 from ._models import Error1 as ErrorDetail
@@ -93,10 +108,12 @@ from ._models import Item as CSEItem
 from ._models import Key as AccountKey
 from ._models import Match as RankMatch
 from ._models import Month as AccountMonth
-from ._models import Progress as CrawlProgress
+from ._models import Progress as ResearchProgress
+from ._models import Progress1 as CrawlProgress
 from ._models import Response as ReviewOwnerResponse
 from ._models import SearchInformation as CSESearchInformation
-from ._models import Stats as CrawlStats
+from ._models import Stats as ResearchStats
+from ._models import Stats1 as CrawlStats
 from ._models import User as ReviewUser
 
 __all__ = [
@@ -104,6 +121,17 @@ __all__ = [
     "AccountKey",
     "AccountMonth",
     "AnswerBox",
+    "AnswerCredits",
+    "AnswerDepth",
+    "AnswerMeta",
+    "AnswerParams",
+    "AnswerRequest",
+    "AnswerResponse",
+    "AnswerSource",
+    "AnswerStreamDelta",
+    "AnswerStreamDone",
+    "AnswerStreamEvent",
+    "AnswerStreamResults",
     "AutocompleteResponse",
     "Batch",
     "BatchCreateRequest",
@@ -114,6 +142,7 @@ __all__ = [
     "CSEItem",
     "CSEResponse",
     "CSESearchInformation",
+    "Citation",
     "CrawlPage",
     "CrawlProgress",
     "CrawlRequest",
@@ -136,6 +165,7 @@ __all__ = [
     "ImageResult",
     "ImagesResponse",
     "KnowledgeGraph",
+    "LLMUsage",
     "MapRequest",
     "MapResponse",
     "MapURL",
@@ -173,6 +203,13 @@ __all__ = [
     "RankResponse",
     "RelatedSearch",
     "RequestEcho",
+    "ResearchEffort",
+    "ResearchProgress",
+    "ResearchRequest",
+    "ResearchResult",
+    "ResearchSource",
+    "ResearchStats",
+    "ResearchTask",
     "ReviewOwnerResponse",
     "ReviewResult",
     "ReviewUser",
@@ -184,6 +221,7 @@ __all__ = [
     "RouteStep",
     "ScholarResponse",
     "ScholarResult",
+    "SearchAnswer",
     "SearchParams",
     "SearchRequest",
     "SearchResponse",
@@ -249,8 +287,13 @@ CrawlStopReason = Literal["done", "limit", "time_limit", "size_limit", "too_many
 """``CrawlStats.stopped`` values: why a crawl ended (models keep it a plain ``str``)."""
 TaskStatus = Literal["queued", "running", "completed", "failed", "canceled"]
 """Task ``status`` values (models keep it a plain ``str``)."""
-WebhookEvent = Literal["batch.completed", "crawl.completed", "monitor.results"]
+WebhookEvent = Literal["batch.completed", "crawl.completed", "research.completed", "monitor.results"]
 """``X-SerpKite-Event`` values."""
+AnswerDepth = Literal["fast", "standard"]
+"""``fast`` answers from the result page; ``standard`` (default) also reads the top pages."""
+ResearchEffort = Literal["lite", "standard", "deep"]
+"""How much research searches and reads: ``lite``, ``standard`` (default) or ``deep``, each at a
+flat price (https://serpkite.com/pricing)."""
 BatchEndpoint = Literal[
     "search",
     "images",
@@ -319,6 +362,33 @@ class SearchParams(TypedDict, total=False):
     highlights: Optional[bool]
     """Return query-ranked passages of the pages read by ``include_content`` instead of the
     whole page (search only, no extra credits)."""
+    include_answer: Optional[bool]
+    """Add a cited AI ``answer`` (``text`` with ``[n]`` markers, ``citations``) over the results
+    (search and news, at an extra price). When the model fails there is no ``answer``, the extra
+    credits are refunded and ``meta.warnings`` says why."""
+
+
+class AnswerParams(TypedDict, total=False):
+    """Search options of :meth:`SerpKite.answer` (``q``, ``depth``, ``num_sources`` and
+    ``output_schema`` are keyword arguments of their own)."""
+
+    country: Optional[str]
+    language: Optional[str]
+    location: Optional[str]
+    uule: Optional[str]
+    time: Optional[TimeRange]
+    tbs: Optional[str]
+    device: Optional[Device]
+    safe: Optional[Literal["active", "off"]]
+    autocorrect: Optional[bool]
+    max_age: Optional[int]
+    """Accept a cached search up to this many seconds old."""
+    engine: Optional[Engine]
+    include_domains: Optional[DomainList]
+    exclude_domains: Optional[DomainList]
+    boost_domains: Optional[DomainList]
+    start_date: Optional[DateLike]
+    end_date: Optional[DateLike]
 
 
 class MonitorSearchParams(TypedDict, total=False):
@@ -385,3 +455,7 @@ class RankParams(TypedDict, total=False):
 
 
 BatchEntry = Union[Batch, ErrorResponse]
+
+AnswerStreamEvent = Union[AnswerStreamResults, AnswerStreamDelta, AnswerStreamDone]
+"""One event of ``answer_stream``: :class:`AnswerStreamResults` first, then
+:class:`AnswerStreamDelta` pieces of text, then one :class:`AnswerStreamDone`."""
