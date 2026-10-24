@@ -1728,9 +1728,9 @@ class SearchRequest(BaseModel):
     """
     Map point "@lat,lng,14z" (maps and places only; zoom optional, default 14z): the map is searched around that point at that zoom, wherever the request comes from. Overrides location
     """
-    num: int | None = 10
+    num: Annotated[int | None, Field(ge=1, le=100)] = 10
     """
-    10, or up to 100 for the depth bundle on search and news (7 credits for 100; values between round up to whole pages). Other verticals return one page of 10
+    1–100. Up to 10 returns one page (10 results, 1 credit; trim it yourself for fewer). Above 10 on search and news is the depth bundle (7 credits for 100; values between round up to whole pages). Other verticals return one page of 10
     """
     page: Annotated[int | None, Field(ge=1, le=10)] = 1
     time: str | None = None

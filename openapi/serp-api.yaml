@@ -1229,7 +1229,7 @@ components:
         location: { type: string, description: 'Free-text location, e.g. "Austin, Texas, United States"' }
         uule: { type: string, description: Pre-encoded Google location (overrides ll and location; percent-encoded values are decoded) }
         ll: { type: string, description: 'Map point "@lat,lng,14z" (maps and places only; zoom optional, default 14z): the map is searched around that point at that zoom, wherever the request comes from. Overrides location' }
-        num: { type: integer, default: 10, description: "10, or up to 100 for the depth bundle on search and news (7 credits for 100; values between round up to whole pages). Other verticals return one page of 10" }
+        num: { type: integer, default: 10, minimum: 1, maximum: 100, description: "1–100. Up to 10 returns one page (10 results, 1 credit; trim it yourself for fewer). Above 10 on search and news is the depth bundle (7 credits for 100; values between round up to whole pages). Other verticals return one page of 10" }
         page: { type: integer, default: 1, minimum: 1, maximum: 10 }
         time: { type: string, enum: [hour, day, week, month, year], description: "Only results from the last hour/day/… (search, news, images, videos, shopping). A fallback engine without that window is skipped, never answered unfiltered" }
         tbs: { type: string, description: "Advanced: raw Google tbs filter (e.g. qdr:d, qdr:w2, cdr:1,cd_min:1/1/2026,cd_max:1/31/2026); overrides time" }
