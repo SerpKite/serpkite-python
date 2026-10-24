@@ -1730,7 +1730,7 @@ class SearchRequest(BaseModel):
     """
     num: Annotated[int | None, Field(ge=1, le=100)] = 10
     """
-    1–100. Up to 10 returns one page (10 results, 1 credit; trim it yourself for fewer). Above 10 on search and news is the depth bundle (7 credits for 100; values between round up to whole pages). Other verticals return one page of 10
+    1–100. Up to 10 returns one page (10 results, 1 credit; trim it yourself for fewer). Above 10 on search and news is the depth bundle (7 credits for 100; values between round up to whole pages). On images a page is a block of up to 100 images (1 credit) and num (default 100) is how many of them to return; `page` moves to the next block. Other verticals return one page of 10
     """
     page: Annotated[int | None, Field(ge=1, le=10)] = 1
     time: str | None = None
