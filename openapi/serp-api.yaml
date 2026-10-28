@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SerpKite SERP API
-  version: 1.12.0
+  version: 1.12.1
   description: |
     Public search API (api.serpkite.com). Google results as clean JSON or Markdown
     for AI agents, plus a Google Custom Search–compatible endpoint. Official SDKs:
@@ -35,7 +35,10 @@ info:
     **Errors** share one body: `{"error":{"code","message","request_id"}}`.
     Upstream failures (`upstream_error`, `upstream_blocked`, `upstream_timeout`)
     are `503` with `Retry-After`, never billed and safe to retry. The API never
-    returns `502` or `504`.
+    returns `502` or `504`. `429` also carries `Retry-After`: `rate_limited` is
+    the per-second limit; `daily_limit_reached` is the free daily limit of an
+    account that never bought a pack, which resets at 00:00 UTC (the message
+    names the limit and the billing page; buying any pack removes it).
 
     **CORS:** `Access-Control-Allow-Origin: *` without credentials; the `X-*`
     headers above are exposed, so a browser playground can call the API with a key.
