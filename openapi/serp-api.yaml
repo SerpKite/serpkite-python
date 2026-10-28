@@ -1144,7 +1144,7 @@ components:
       description: |
         Temporarily unavailable, not billed, safe to retry after `Retry-After`.
         Codes: `upstream_error` (the upstream page couldn't be fetched or parsed),
-        `upstream_blocked` (the upstream is rate limiting us), `upstream_timeout`
+        `upstream_blocked` (the upstream is rate limiting us or refused the query), `upstream_timeout`
         (the search took too long), `unavailable` (endpoint or dependency down).
         The API never sends 502 or 504.
       headers:
