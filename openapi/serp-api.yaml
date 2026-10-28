@@ -65,7 +65,7 @@ info:
 
     **AI assistants** (`/v1/chatgpt`, `/v1/gemini`, `/v1/copilot`,
     `/v1/ai_mode`, `/v1/brave_ai`): a `prompt` sent to the public assistant
-    as a logged-out user, through our proxies; the response is its answer
+    as a logged-out user; the response is its answer
     (`text`, `markdown`) with the `sources` it cited or listed,
     `search_queries`, `products` and `places` where the assistant shows them,
     and `mentions` for the brands and domains in `track`. ChatGPT 5, Gemini 5,
@@ -345,13 +345,12 @@ paths:
       summary: Ask ChatGPT as a logged-out user and get its answer, cited sources, products and places (5 credits)
       operationId: chatgpt
       description: |
-        Opens chatgpt.com as a logged-out visitor in a standard Chrome behind our
-        proxies, sends `prompt` and returns the answer. With `web_search` (default
-        true) ChatGPT searches the web; `false` lets it decide. ChatGPT localises
-        prices, shops and places to where the visitor is: set `country` to ask from
-        an exit in that country (residential proxies), or leave it out to ask from
-        any of our exits. Guests get ChatGPT's default free model (`model`).
-        Takes 20–90 s; failed or refused answers are free.
+        Opens chatgpt.com as a logged-out visitor in a standard browser, sends
+        `prompt` and returns the answer. With `web_search` (default true) ChatGPT
+        searches the web; `false` lets it decide. ChatGPT localises prices, shops
+        and places to where the visitor is: set `country` to ask as a visitor in
+        that country. Guests get ChatGPT's default free model (`model`).
+        Usually takes 10–30 s; failed or refused answers are free.
       requestBody:
         required: true
         content:
@@ -371,9 +370,9 @@ paths:
       summary: Ask Google Gemini as a logged-out user and get its answer with the sources it grounded on (5 credits)
       operationId: gemini
       description: |
-        Opens gemini.google.com as a logged-out visitor and sends `prompt`. Gemini
-        answers guests from residential and ISP exits only; grounded answers take
-        40–90 s. `country` asks from an exit in that country.
+        Opens gemini.google.com as a logged-out visitor and sends `prompt`. Most
+        answers take 5–30 s; answers that search the web take longer. `country`
+        asks as a visitor in that country.
       requestBody:
         required: true
         content:
@@ -1461,7 +1460,7 @@ components:
       properties:
         prompt: { type: string, minLength: 1, maxLength: 4000, description: The message to ChatGPT }
         web_search: { type: boolean, default: true, description: "Make ChatGPT search the web; false lets it decide (it then searches for about two thirds of shopping and local prompts)" }
-        country: { type: string, description: "Ask from an exit in this country (ISO 3166-1 alpha-2, residential proxies). Without it any of our exits asks (mostly US and EU)" }
+        country: { type: string, description: "Ask as a visitor in this country (ISO 3166-1 alpha-2). Without it the visitor is usually in the US or EU" }
         track: { $ref: "#/components/schemas/TrackList" }
         include_html: { type: boolean, default: false }
         format: { type: string, enum: [json, markdown, compact], default: json }
