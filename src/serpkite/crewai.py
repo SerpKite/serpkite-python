@@ -1,10 +1,11 @@
 """CrewAI integration: ``pip install "serpkite[crewai]"``.
 
->>> from serpkite.crewai import SerpKiteSearchTool
+>>> from serpkite.crewai import SerpKiteAssistantTool, SerpKiteSearchTool
 >>> tool = SerpKiteSearchTool()  # optional: endpoint="news", country="de", num=10
->>> agent = Agent(role="Researcher", goal="...", backstory="...", tools=[tool])
+>>> chatgpt = SerpKiteAssistantTool(assistant="chatgpt", track=["acme.com"])
+>>> agent = Agent(role="Researcher", goal="...", backstory="...", tools=[tool, chatgpt])
 
-The tool returns Markdown, which is far more token-efficient for an LLM than raw JSON.
+The tools return Markdown, which is far more token-efficient for an LLM than raw JSON.
 """
 
 from __future__ import annotations
@@ -22,7 +23,12 @@ except ImportError as exc:  # pragma: no cover - exercised only without crewai
 
 from ._client import SerpKite
 
-__all__ = ["SerpKiteSearchTool", "SerpKiteSearchToolInput"]
+__all__ = [
+    "SerpKiteAssistantTool",
+    "SerpKiteAssistantToolInput",
+    "SerpKiteSearchTool",
+    "SerpKiteSearchToolInput",
+]
 
 ToolEndpoint = Literal[
     "search",
@@ -128,3 +134,102 @@ class SerpKiteSearchTool(BaseTool):  # type: ignore[misc]
         }
         body["format"] = "markdown"
         return str(self._get_client().request(self.endpoint, body))
+
+
+# ── AI assistants ──────────────────────────────────────────────────────────
+
+ToolAssistant = Literal["chatgpt", "gemini", "copilot", "ai_mode", "brave_ai"]
+
+_ASSISTANTS: dict[str, tuple[str, str]] = {
+    "chatgpt": (
+        "ChatGPT",
+        "Ask ChatGPT (chatgpt.com, logged out, searching the web) and get its answer as Markdown with "
+        "the sources it cited and the products and places it showed: what ChatGPT tells people. "
+        "Takes 10-90 s.",
+    ),
+    "gemini": (
+        "Gemini",
+        "Ask Google Gemini (gemini.google.com, logged out) and get its answer as Markdown with the "
+        "sources it grounded on: what Gemini tells people. Takes 10-90 s.",
+    ),
+    "copilot": (
+        "Copilot",
+        "Ask Microsoft Copilot Search on Bing and get its answer as Markdown with cited sources and "
+        "products. Takes 15-40 s.",
+    ),
+    "ai_mode": (
+        "Google AI Mode",
+        "Ask Google AI Mode and get its answer as Markdown with cited sources and products. Takes 10-45 s.",
+    ),
+    "brave_ai": (
+        "Brave AI",
+        "Ask Brave Search's AI answer and get it as Markdown with cited sources, the searches it ran "
+        "and products. Takes about 10 s.",
+    ),
+}
+
+
+class SerpKiteAssistantToolInput(BaseModel):
+    """Arguments the agent can fill in."""
+
+    prompt: str = Field(..., description="The message to the assistant, as a user would type it.")
+
+
+class SerpKiteAssistantTool(BaseTool):  # type: ignore[misc]
+    """What ChatGPT, Gemini, Copilot, Google AI Mode or Brave AI answers, via SerpKite.
+
+    Returns the answer as Markdown with ``[n](link)`` citations, its sources and products and,
+    with ``track``, how each brand or domain was mentioned. Prices per answer: ChatGPT 5,
+    Gemini 5, Copilot 3, AI Mode 3, Brave AI 2 credits; failed and empty answers are free."""
+
+    name: str = "SerpKite ChatGPT"
+    description: str = _ASSISTANTS["chatgpt"][1]
+    args_schema: type[BaseModel] = SerpKiteAssistantToolInput
+
+    assistant: ToolAssistant = "chatgpt"
+    """Which assistant to ask: chatgpt, gemini, copilot, ai_mode or brave_ai."""
+    track: Optional[list[str]] = None
+    """Brands ("Acme") and domains ("acme.com") to check each answer for (up to 20)."""
+    country: Optional[str] = None
+    """Ask from this country, e.g. ``de``."""
+    language: Optional[str] = None
+    """Interface language (not ChatGPT)."""
+    web_search: Optional[bool] = None
+    """ChatGPT only: ``False`` lets ChatGPT decide whether to search (default: it searches)."""
+    api_key: Optional[str] = None
+    """Defaults to the SERPKITE_API_KEY environment variable."""
+    base_url: Optional[str] = None
+    client: Optional[SerpKite] = None
+    """A preconfigured client (overrides api_key/base_url)."""
+
+    _client: Optional[SerpKite] = PrivateAttr(default=None)
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    def __init__(self, **data: Any) -> None:
+        assistant = str(data.get("assistant", "chatgpt"))
+        if assistant in _ASSISTANTS:
+            label, description = _ASSISTANTS[assistant]
+            data.setdefault("name", f"SerpKite {label}")
+            data.setdefault("description", description)
+        if data.get("web_search") is not None and assistant != "chatgpt":
+            raise ValueError("web_search is only supported by assistant='chatgpt'")
+        if data.get("language") is not None and assistant == "chatgpt":
+            raise ValueError("language is not supported by assistant='chatgpt'")
+        super().__init__(**data)
+
+    def _get_client(self) -> SerpKite:
+        if self.client is not None:
+            return self.client
+        if self._client is None:
+            self._client = SerpKite(api_key=self.api_key, base_url=self.base_url)
+        return self._client
+
+    def _run(self, prompt: str, **_: Any) -> str:
+        params: dict[str, Any] = {"track": self.track, "country": self.country}
+        if self.assistant == "chatgpt":
+            params["web_search"] = self.web_search
+        else:
+            params["language"] = self.language
+        method = getattr(self._get_client(), self.assistant)
+        return str(method(prompt, format="markdown", **params))

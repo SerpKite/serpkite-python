@@ -8,7 +8,12 @@ import respx
 
 pytest.importorskip("crewai", reason="install serpkite[crewai] to run the CrewAI tests")
 
-from serpkite.crewai import SerpKiteSearchTool, SerpKiteSearchToolInput
+from serpkite.crewai import (
+    SerpKiteAssistantTool,
+    SerpKiteAssistantToolInput,
+    SerpKiteSearchTool,
+    SerpKiteSearchToolInput,
+)
 
 from .helpers import BASE
 
@@ -51,3 +56,46 @@ def test_tool_defaults() -> None:
     tool = SerpKiteSearchTool()
     assert tool.endpoint == "search"
     assert tool.name == "SerpKite Google search"
+
+
+@respx.mock
+def test_assistant_tool_returns_markdown() -> None:
+    route = respx.post(f"{BASE}/v1/chatgpt").mock(
+        return_value=httpx.Response(
+            200, text="HubSpot [1](https://hubspot.com/)", headers={"content-type": "text/markdown"}
+        )
+    )
+    tool = SerpKiteAssistantTool(track=["hubspot.com"], web_search=False)
+    assert tool.name == "SerpKite ChatGPT"
+    assert tool.args_schema is SerpKiteAssistantToolInput
+    assert tool.run(prompt="best crm") == "HubSpot [1](https://hubspot.com/)"
+    assert json.loads(route.calls.last.request.content) == {
+        "prompt": "best crm",
+        "track": ["hubspot.com"],
+        "web_search": False,
+        "format": "markdown",
+    }
+
+
+@pytest.mark.parametrize("assistant", ["gemini", "copilot", "ai_mode", "brave_ai"])
+@respx.mock
+def test_assistant_tool_endpoints(assistant: str) -> None:
+    route = respx.post(f"{BASE}/v1/{assistant}").mock(
+        return_value=httpx.Response(200, text="ok", headers={"content-type": "text/markdown"})
+    )
+    tool = SerpKiteAssistantTool(assistant=assistant, country="de", language="de")
+    assert tool.name.startswith("SerpKite ")
+    assert tool.run(prompt="x") == "ok"
+    assert json.loads(route.calls.last.request.content) == {
+        "prompt": "x",
+        "country": "de",
+        "language": "de",
+        "format": "markdown",
+    }
+
+
+def test_assistant_tool_rejects_unsupported_options() -> None:
+    with pytest.raises(ValueError, match="web_search"):
+        SerpKiteAssistantTool(assistant="gemini", web_search=True)
+    with pytest.raises(ValueError, match="language"):
+        SerpKiteAssistantTool(language="de")

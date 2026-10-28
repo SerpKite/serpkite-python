@@ -479,6 +479,22 @@ The tool returns Markdown, which uses far fewer tokens than JSON. The agent can 
 `maps`, `places`, `shopping`, `scholar`, `patents` or `autocomplete`. `engine` (you set
 it, not the agent) opts in to [fallback providers](#search-engines--fallback).
 
+`SerpKiteAssistantTool` asks an AI assistant and returns its answer as Markdown with `[n](link)`
+citations, sources, products and, with `track`, how each brand or domain was mentioned:
+
+```python
+from serpkite.crewai import SerpKiteAssistantTool
+
+chatgpt = SerpKiteAssistantTool(assistant="chatgpt", track=["hubspot.com", "Pipedrive"])
+gemini = SerpKiteAssistantTool(assistant="gemini", country="de", language="de")
+agent = Agent(role="Brand analyst", goal="See what AI assistants recommend", backstory="...",
+              tools=[chatgpt, gemini])
+```
+
+`assistant` is `chatgpt` (default), `gemini`, `copilot`, `ai_mode` or `brave_ai`; the agent sets
+only `prompt`. `language` isn't taken by ChatGPT, and `web_search` is ChatGPT only. Answers take
+10-90 s and cost 2-5 credits (see [AI assistants](#ai-assistants)).
+
 ## LangChain
 
 See [`langchain-serpkite`](https://pypi.org/project/langchain-serpkite/) for LangChain tools, a
