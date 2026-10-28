@@ -8,6 +8,65 @@ from uuid import UUID
 from datetime import date as date_aliased
 
 
+class AIOverview(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    text: str
+    markdown: str
+    """
+    Citations as [n](link) matching sources[].position
+    """
+    sources: list[AISource]
+
+
+class AIProduct(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    position: int
+    title: str
+    brand: str | None = None
+    price: str | None = None
+    """
+    As shown
+    """
+    extracted_price: float | None = None
+    currency: str | None = None
+    """
+    ISO 4217 when the symbol is unambiguous
+    """
+    rating: float | None = None
+    reviews: int | None = None
+    merchant: str | None = None
+    link: str | None = None
+    image: str | None = None
+    description: str | None = None
+    sponsored: bool | None = None
+    """
+    A paid placement (an ad card shown with the answer)
+    """
+
+
+class AISource(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    position: int
+    """
+    The number the answer cites it with ([n] in markdown)
+    """
+    title: str | None = None
+    link: str
+    domain: str
+    snippet: str | None = None
+    date: str | None = None
+    cited: bool
+    """
+    Cited inline in the answer (false: only listed beside it)
+    """
+
+
 class Account(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -163,13 +222,106 @@ class AnswerStreamResults(BaseModel):
     results: list[AnswerSource]
 
 
+class AssistantEcho(BaseModel):
+    """
+    The normalised request of an AI assistant endpoint (the path names the assistant, so there is no engine)
+    """
+
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    endpoint: Annotated[str, Field(examples=["chatgpt", "gemini"])]
+    prompt: str
+    country: str | None = None
+    language: str | None = None
+    """
+    Not on chatgpt
+    """
+    web_search: bool | None = None
+    """
+    chatgpt only
+    """
+    include_html: bool | None = None
+
+
+class AssistantRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    prompt: Annotated[str, Field(max_length=4000, min_length=1)]
+    """
+    The message to the assistant
+    """
+    country: str | None = None
+    """
+    Ask from this country (ISO 3166-1 alpha-2): answers, prices and shops follow it
+    """
+    language: str | None = None
+    """
+    Interface language (e.g. en, de); the answer follows the prompt's language
+    """
+    track: Annotated[list[TrackListItem] | None, Field(max_length=20)] = None
+    """
+    Brands ("Acme") and domains ("acme.com", subdomains match) to check the answer for; each comes back in `mentions`
+    """
+    include_html: bool | None = False
+    """
+    Also return the answer page's HTML (`html`)
+    """
+    format: str | None = "json"
+    fields: str | None = None
+    max_age: Annotated[int | None, Field(ge=0, le=2592000)] = None
+    """
+    Accept a cached answer up to this many seconds old (half price); answers are cached for at most an hour
+    """
+
+
+class AssistantResponse(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    request: AssistantEcho
+    text: str
+    """
+    The answer as plain text
+    """
+    markdown: str
+    """
+    The answer as Markdown, citations as [n](link) matching sources[].position
+    """
+    html: str | None = None
+    """
+    Only with include_html=true
+    """
+    model: str | None = None
+    """
+    The model the assistant reports, when it does (e.g. ChatGPT's guest model)
+    """
+    sources: list[AISource]
+    search_queries: list[str]
+    """
+    The searches the assistant ran (fan-out) where it shows them
+    """
+    products: list[AIProduct]
+    places: list[PlaceResult] | None = None
+    """
+    Local businesses the answer showed
+    """
+    related_questions: list[str] | None = None
+    mentions: list[Mention] | None = None
+    """
+    With track only
+    """
+    meta: Meta
+
+
 class AutocompleteResponse(BaseModel):
     model_config = ConfigDict(
         extra="allow",
     )
     request: RequestEcho
     results: list[Suggestion]
-    meta: MetaModel
+    meta: Meta
 
 
 class Batch(BaseModel):
@@ -224,6 +376,32 @@ class CSEResponse(BaseModel):
     context: dict[str, Any] | None = None
     searchInformation: SearchInformation
     items: list[Item]
+
+
+class ChatGPTRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    prompt: Annotated[str, Field(max_length=4000, min_length=1)]
+    """
+    The message to ChatGPT
+    """
+    web_search: bool | None = True
+    """
+    Make ChatGPT search the web; false lets it decide (it then searches for about two thirds of shopping and local prompts)
+    """
+    country: str | None = None
+    """
+    Ask from an exit in this country (ISO 3166-1 alpha-2, residential proxies). Without it any of our exits asks (mostly US and EU)
+    """
+    track: Annotated[list[TrackListItem] | None, Field(max_length=20)] = None
+    """
+    Brands ("Acme") and domains ("acme.com", subdomains match) to check the answer for; each comes back in `mentions`
+    """
+    include_html: bool | None = False
+    format: str | None = "json"
+    fields: str | None = None
+    max_age: Annotated[int | None, Field(ge=0, le=2592000)] = None
 
 
 class Citation(BaseModel):
@@ -511,7 +689,7 @@ class ExtractResponse(BaseModel):
     request: Request
     results: list[ExtractResult]
     failed: list[ExtractFailure]
-    meta: Meta
+    meta: Meta1
 
 
 class ExtractResult(BaseModel):
@@ -618,7 +796,7 @@ class ImagesResponse(BaseModel):
     )
     request: RequestEcho
     results: list[ImageResult]
-    meta: MetaModel
+    meta: Meta
 
 
 class Item(BaseModel):
@@ -714,7 +892,7 @@ class MapResponse(BaseModel):
     )
     request: Request1
     results: list[MapURL]
-    meta: Meta1
+    meta: Meta2
 
 
 class MapURL(BaseModel):
@@ -739,29 +917,34 @@ class Match(BaseModel):
     link: str
 
 
+class Mention(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    term: str
+    mentioned: bool
+    """
+    The answer text names it (a domain: names the domain)
+    """
+    cited: bool
+    """
+    A cited source matches it
+    """
+    sources: list[int]
+    """
+    Positions of the matching sources
+    """
+    products: list[int] | None = None
+    """
+    Positions of the matching products
+    """
+    text_position: float
+    """
+    Where the text first names it, 0 (start) to 1 (end); -1 when it doesn't
+    """
+
+
 class Meta(BaseModel):
-    model_config = ConfigDict(
-        extra="allow",
-    )
-    request_id: str
-    credits_used: float
-    latency_ms: int | None = None
-    succeeded: int
-    failed: int
-    llm: LLMUsage | None = None
-
-
-class Meta1(BaseModel):
-    model_config = ConfigDict(
-        extra="allow",
-    )
-    request_id: str
-    credits_used: float
-    latency_ms: int | None = None
-    count: int
-
-
-class MetaModel(BaseModel):
     model_config = ConfigDict(
         extra="allow",
     )
@@ -787,7 +970,7 @@ class MetaModel(BaseModel):
     """
 
 
-class AnswerMeta(MetaModel):
+class AnswerMeta(Meta):
     model_config = ConfigDict(
         extra="allow",
     )
@@ -795,6 +978,28 @@ class AnswerMeta(MetaModel):
     """
     `credits_used` split into the search and the model part
     """
+
+
+class Meta1(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    request_id: str
+    credits_used: float
+    latency_ms: int | None = None
+    succeeded: int
+    failed: int
+    llm: LLMUsage | None = None
+
+
+class Meta2(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    request_id: str
+    credits_used: float
+    latency_ms: int | None = None
+    count: int
 
 
 class Monitor(BaseModel):
@@ -832,9 +1037,33 @@ class Monitor(BaseModel):
     created_at: AwareDatetime
 
 
+class MonitorAnswer(BaseModel):
+    """
+    What an AI assistant monitor reports every run (one item per run)
+    """
+
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    text: str
+    markdown: str
+    model: str | None = None
+    sources: list[AISource]
+    new_sources: list[str]
+    """
+    Links of the sources not seen in earlier runs
+    """
+    search_queries: list[str]
+    products: list[AIProduct] | None = None
+    mentions: list[Mention] | None = None
+    """
+    With track only
+    """
+
+
 class MonitorCreateRequest(BaseModel):
     """
-    Search and news monitors need `q`; webpage monitors need `url` and take only `country` besides
+    Search and news monitors need `q`; webpage monitors need `url` and take only `country` besides; AI assistant monitors need `prompt` and take `country`, `language` (not chatgpt), `web_search` (chatgpt) and `track`
     """
 
     model_config = ConfigDict(
@@ -844,6 +1073,18 @@ class MonitorCreateRequest(BaseModel):
     url: AnyUrl | None = None
     """
     endpoint=webpage: the page to watch for content changes
+    """
+    prompt: Annotated[str | None, Field(max_length=4000, min_length=1)] = None
+    """
+    AI assistant monitors: the prompt asked every run
+    """
+    web_search: bool | None = None
+    """
+    endpoint=chatgpt
+    """
+    track: Annotated[list[TrackListItem] | None, Field(max_length=20)] = None
+    """
+    Brands ("Acme") and domains ("acme.com", subdomains match) to check the answer for; each comes back in `mentions`
     """
     endpoint: str | None = "search"
     metadata: dict[str, Any] | None = None
@@ -933,13 +1174,17 @@ class MonitorResultsEvent(BaseModel):
     """
     name: str
     endpoint: str
-    q: str
+    q: str | None = None
     """
-    The saved query (empty for webpage monitors)
+    The saved query (empty for webpage monitors
     """
     url: str | None = None
     """
     webpage monitors only
+    """
+    prompt: str | None = None
+    """
+    AI assistant monitors only (instead of q)
     """
     metadata: dict[str, Any] | None = None
     """
@@ -952,7 +1197,7 @@ class MonitorResultsEvent(BaseModel):
     run_at: AwareDatetime
     new_results: list[dict[str, Any]]
     """
-    Results not seen in earlier runs (OrganicResult-shaped for search, NewsResult for news, MonitorPageChange for webpage)
+    Results not seen in earlier runs (OrganicResult-shaped for search, NewsResult for news, MonitorPageChange for webpage); for AI assistant monitors the run's answer (one MonitorAnswer, sent every run)
     """
     credits_used: float
     """
@@ -970,7 +1215,7 @@ class MonitorRun(BaseModel):
     new_results: int
     results: list[dict[str, Any]] | None = None
     """
-    The new results (OrganicResult-shaped for search, NewsResult for news, MonitorPageChange for webpage); null when there were none or after 24 hours
+    The new results (OrganicResult-shaped for search, NewsResult for news, MonitorPageChange for webpage, one MonitorAnswer per run for AI assistants); null when there were none or after 24 hours
     """
     credits_used: float
     webhook_status: str | None = None
@@ -993,7 +1238,7 @@ class MonitorRunList(BaseModel):
 
 class MonitorSearch(BaseModel):
     """
-    The saved request a monitor reruns: a search (q and options) or, for webpage monitors, url (and country)
+    The saved request a monitor reruns: a search (q and options), for webpage monitors url (and country), or for AI assistant monitors prompt (with country, language, web_search and track)
     """
 
     model_config = ConfigDict(
@@ -1001,6 +1246,15 @@ class MonitorSearch(BaseModel):
     )
     q: str | None = None
     url: str | None = None
+    prompt: str | None = None
+    """
+    AI assistant monitors
+    """
+    web_search: bool | None = None
+    """
+    endpoint=chatgpt
+    """
+    track: list[str] | None = None
     country: str | None = None
     language: str | None = None
     location: str | None = None
@@ -1038,9 +1292,15 @@ class MonitorUpdateRequest(BaseModel):
     """
     endpoint: str | None = None
     """
-    Switching between a search and a page drops the other kind's fields
+    Switching between a search, a page and an AI prompt drops the other kinds' fields
     """
     q: Annotated[str | None, Field(max_length=2048, min_length=1)] = None
+    prompt: Annotated[str | None, Field(max_length=4000, min_length=1)] = None
+    web_search: bool | None = None
+    track: Annotated[list[TrackListItem] | None, Field(max_length=20)] = None
+    """
+    Brands ("Acme") and domains ("acme.com", subdomains match) to check the answer for; each comes back in `mentions`
+    """
     url: AnyUrl | None = None
     """
     endpoint=webpage only
@@ -1081,7 +1341,7 @@ class NewsResponse(BaseModel):
     request: RequestEcho
     results: list[NewsResult]
     answer: SearchAnswer | None = None
-    meta: MetaModel
+    meta: Meta
 
 
 class NewsResult(BaseModel):
@@ -1203,7 +1463,7 @@ class PatentsResponse(BaseModel):
     )
     request: RequestEcho
     results: list[PatentResult]
-    meta: MetaModel
+    meta: Meta
 
 
 class PeopleAlsoAsk(BaseModel):
@@ -1338,7 +1598,7 @@ class PlacesResponse(BaseModel):
     )
     request: RequestEcho
     results: list[PlaceResult]
-    meta: MetaModel
+    meta: Meta
 
 
 class Progress(BaseModel):
@@ -1411,7 +1671,7 @@ class RankResponse(BaseModel):
     """
     Organic results inspected
     """
-    meta: MetaModel
+    meta: Meta
 
 
 class RelatedSearch(BaseModel):
@@ -1454,7 +1714,7 @@ class RequestEcho(BaseModel):
     model_config = ConfigDict(
         extra="allow",
     )
-    endpoint: Annotated[str, Field(examples=["search", "news", "webpage"])]
+    endpoint: Annotated[str, Field(examples=["search", "news", "webpage", "chatgpt"])]
     engine: str | list[str]
     """
     The engine policy as asked (google, auto, one provider or a list)
@@ -1484,6 +1744,15 @@ class RequestEcho(BaseModel):
     boost_domains: list[str] | None = None
     highlights: bool | None = None
     include_answer: bool | None = None
+    prompt: str | None = None
+    """
+    AI assistant endpoints
+    """
+    web_search: bool | None = None
+    """
+    /v1/chatgpt
+    """
+    include_html: bool | None = None
 
 
 class ResearchRequest(BaseModel):
@@ -1634,7 +1903,7 @@ class ReviewsResponse(BaseModel):
     """
     Pass as `page_token` for the next page. Absent on the last page and at the 100-review depth limit
     """
-    meta: MetaModel
+    meta: Meta
 
 
 class RouteStep(BaseModel):
@@ -1659,7 +1928,7 @@ class ScholarResponse(BaseModel):
     )
     request: RequestEcho
     results: list[ScholarResult]
-    meta: MetaModel
+    meta: Meta
 
 
 class ScholarResult(BaseModel):
@@ -1809,7 +2078,11 @@ class SearchResponse(BaseModel):
     top_stories: list[NewsResult] | None = None
     places: list[PlaceResult] | None = None
     answer: SearchAnswer | None = None
-    meta: MetaModel
+    ai_overview: AIOverview | None = None
+    """
+    Google's AI Overview when the page showed one
+    """
+    meta: Meta
 
 
 class ShoppingResponse(BaseModel):
@@ -1818,7 +2091,7 @@ class ShoppingResponse(BaseModel):
     )
     request: RequestEcho
     results: list[ShoppingResult]
-    meta: MetaModel
+    meta: Meta
 
 
 class ShoppingResult(BaseModel):
@@ -1983,6 +2256,10 @@ class TaskError(BaseModel):
     message: str | None = None
 
 
+class TrackListItem(RootModel[str]):
+    root: Annotated[str, Field(max_length=100)]
+
+
 class User(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -2018,7 +2295,7 @@ class VideosResponse(BaseModel):
     )
     request: RequestEcho
     results: list[VideoResult]
-    meta: MetaModel
+    meta: Meta
 
 
 class WebpageRequest(BaseModel):
@@ -2071,7 +2348,7 @@ class WebpageResponse(BaseModel):
     """
     include_images=true only. Image URLs in document order
     """
-    meta: MetaModel
+    meta: Meta
 
 
 class WeeklyHours(BaseModel):

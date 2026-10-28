@@ -81,22 +81,29 @@ UNSET: Final = Unset()
 
 
 def monitor_body(q: Optional[str], url: Optional[str], fields: Mapping[str, Any]) -> dict[str, Any]:
-    if not q and not url:
-        raise ValueError('create() needs q (search and news monitors) or url (endpoint="webpage")')
+    if not q and not url and not fields.get("prompt"):
+        raise ValueError(
+            'create() needs q (search and news monitors), url (endpoint="webpage") or prompt'
+            " (AI assistant monitors)"
+        )
     body = clean({"q": q, "url": url, **fields})
     if "metadata" in body:
         body["metadata"] = dict(body["metadata"])
+    if "track" in body:
+        body["track"] = str_list(body["track"])
     return body
 
 
 def monitor_update_body(fields: Mapping[str, Any], metadata: Any) -> dict[str, Any]:
     body = clean(fields)
+    if "track" in body:
+        body["track"] = str_list(body["track"])
     if not isinstance(metadata, Unset):
         body["metadata"] = None if metadata is None else dict(metadata)
     if not body:
         raise ValueError(
             "update() needs at least one of name, interval, interval_seconds, webhook_url, active,"
-            " metadata, endpoint, q, url or a search option"
+            " metadata, endpoint, q, url, prompt, web_search, track or a search option"
         )
     return body
 
@@ -108,9 +115,9 @@ def monitor_runs_path(id: Id, limit: Optional[int], before: Optional[Id]) -> str
 
 
 class Monitors:
-    """Scheduled searches (new results) or watched pages (content changes) that report what is
-    new: to a signed ``monitor.results`` webhook (when the monitor has a ``webhook_url``) and
-    always in the run history (:meth:`runs`).
+    """Scheduled searches (new results), watched pages (content changes) or AI assistant prompts
+    (every answer) that report what is new: to a signed ``monitor.results`` webhook (when the
+    monitor has a ``webhook_url``) and always in the run history (:meth:`runs`).
 
     Each run is billed like the request it makes (1 credit per 10 results; empty runs are free). A
     monitor pauses itself after 10 failed runs in a row; ``update(id, active=True)`` resumes it."""
@@ -123,6 +130,9 @@ class Monitors:
         q: Optional[str] = None,
         *,
         url: Optional[str] = None,
+        prompt: Optional[str] = None,
+        web_search: Optional[bool] = None,
+        track: Optional[Sequence[str]] = None,
         webhook_url: Optional[str] = None,
         endpoint: Optional[MonitorEndpoint] = None,
         name: Optional[str] = None,
@@ -138,11 +148,20 @@ class Monitors:
         (``hourly``/``daily``/``weekly``, default daily) or ``interval_seconds`` (≥ 3600).
         The first run is due right away (``active=False`` creates it paused). Without a
         ``webhook_url``, read new results from :meth:`runs`. ``metadata`` is your own JSON
-        object (≤ 2 KB), echoed on the monitor and in its webhooks. Only retried on 429."""
+        object (≤ 2 KB), echoed on the monitor and in its webhooks. Only retried on 429.
+
+        With an AI assistant ``endpoint`` (``chatgpt``, ``gemini``, ``copilot``, ``ai_mode``,
+        ``brave_ai``) the monitor asks ``prompt`` every run (with ``country``, ``language`` (not
+        chatgpt), ``web_search`` (chatgpt) and ``track``) and reports every answer as one
+        :class:`~serpkite.types.MonitorAnswer` (``sources``, ``new_sources``, ``mentions``); each
+        run costs the endpoint's price."""
         body = monitor_body(
             q,
             url,
             {
+                "prompt": prompt,
+                "web_search": web_search,
+                "track": track,
                 "webhook_url": webhook_url,
                 "endpoint": endpoint,
                 "name": name,
@@ -175,13 +194,17 @@ class Monitors:
         endpoint: Optional[MonitorEndpoint] = None,
         q: Optional[str] = None,
         url: Optional[str] = None,
+        prompt: Optional[str] = None,
+        web_search: Optional[bool] = None,
+        track: Optional[Sequence[str]] = None,
         **params: Unpack[MonitorSearchParams],
     ) -> Monitor:
         """Change the name, schedule, webhook (``webhook_url=""`` removes it), pause/resume
         (``active``; resuming makes it due now and clears the failure streak), ``metadata``
         (a mapping replaces it, ``None`` clears it; left out, it is unchanged) or the saved
-        request (``endpoint``, ``q``/``url`` and search options, merged into it; switching
-        between a search and ``"webpage"`` drops the other kind's fields). A changed request
+        request (``endpoint``, ``q``/``url``/``prompt`` and their options, merged into it;
+        switching between a search, ``"webpage"`` and an AI assistant drops the other kinds'
+        fields). A changed request
         starts a new baseline: the next run reports everything as new."""
         body = monitor_update_body(
             {
@@ -193,6 +216,9 @@ class Monitors:
                 "endpoint": endpoint,
                 "q": q,
                 "url": url,
+                "prompt": prompt,
+                "web_search": web_search,
+                "track": track,
                 **params,
             },
             metadata,
@@ -240,6 +266,9 @@ class AsyncMonitors:
         q: Optional[str] = None,
         *,
         url: Optional[str] = None,
+        prompt: Optional[str] = None,
+        web_search: Optional[bool] = None,
+        track: Optional[Sequence[str]] = None,
         webhook_url: Optional[str] = None,
         endpoint: Optional[MonitorEndpoint] = None,
         name: Optional[str] = None,
@@ -254,6 +283,9 @@ class AsyncMonitors:
             q,
             url,
             {
+                "prompt": prompt,
+                "web_search": web_search,
+                "track": track,
                 "webhook_url": webhook_url,
                 "endpoint": endpoint,
                 "name": name,
@@ -286,6 +318,9 @@ class AsyncMonitors:
         endpoint: Optional[MonitorEndpoint] = None,
         q: Optional[str] = None,
         url: Optional[str] = None,
+        prompt: Optional[str] = None,
+        web_search: Optional[bool] = None,
+        track: Optional[Sequence[str]] = None,
         **params: Unpack[MonitorSearchParams],
     ) -> Monitor:
         """See :meth:`Monitors.update`."""
@@ -299,6 +334,9 @@ class AsyncMonitors:
                 "endpoint": endpoint,
                 "q": q,
                 "url": url,
+                "prompt": prompt,
+                "web_search": web_search,
+                "track": track,
                 **params,
             },
             metadata,

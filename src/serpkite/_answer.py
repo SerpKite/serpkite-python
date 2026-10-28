@@ -29,6 +29,9 @@ ANSWER_WAIT = 100.0
 """Minimum HTTP timeout of ``/v1/answer`` (seconds): the search, pages read included, runs before
 the first byte, then the model writes (the API answers within Cloudflare's 100 s)."""
 
+ASSISTANT_WAIT = 120.0
+"""Minimum HTTP timeout of the AI assistant endpoints (seconds): answers take 10-90 s."""
+
 
 def schema_dict(schema: Optional[Schema]) -> Optional[dict[str, Any]]:
     """A JSON Schema mapping, or a pydantic model class turned into one."""
@@ -37,6 +40,20 @@ def schema_dict(schema: Optional[Schema]) -> Optional[dict[str, Any]]:
     if isinstance(schema, type) and issubclass(schema, BaseModel):
         return schema.model_json_schema()
     return dict(schema)
+
+
+def assistant_body(prompt: str, params: Mapping[str, Any]) -> dict[str, Any]:
+    """The body of an AI assistant call: ``track`` as a list, ``include_html=False`` left out."""
+    if not prompt:
+        raise ValueError("prompt is required")
+    body: dict[str, Any] = {"prompt": prompt, **params}
+    if isinstance(body.get("track"), str):
+        body["track"] = [body["track"]]
+    elif body.get("track") is not None:
+        body["track"] = list(body["track"])
+    if body.get("include_html") is False:
+        body.pop("include_html")
+    return body
 
 
 def answer_body(
@@ -233,10 +250,12 @@ async def aiter_events(lines: AsyncIterator[str]) -> AsyncIterator[AnswerStreamE
 
 __all__ = [
     "ANSWER_WAIT",
+    "ASSISTANT_WAIT",
     "STREAM_HEADERS",
     "Schema",
     "aiter_events",
     "answer_body",
+    "assistant_body",
     "extract_ai_wait",
     "iter_events",
     "json_as_events",

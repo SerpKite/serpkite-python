@@ -14,6 +14,9 @@ from typing_extensions import TypedDict
 
 from ._models import (
     Account,
+    AIOverview,
+    AIProduct,
+    AISource,
     AnswerBox,
     AnswerMeta,
     AnswerRequest,
@@ -22,10 +25,14 @@ from ._models import (
     AnswerStreamDelta,
     AnswerStreamDone,
     AnswerStreamResults,
+    AssistantEcho,
+    AssistantRequest,
+    AssistantResponse,
     AutocompleteResponse,
     Batch,
     BatchCreateRequest,
     BatchCreateResponse,
+    ChatGPTRequest,
     Citation,
     CrawlPage,
     CrawlRequest,
@@ -45,8 +52,10 @@ from ._models import (
     MapRequest,
     MapResponse,
     MapURL,
+    Mention,
     Meta,
     Monitor,
+    MonitorAnswer,
     MonitorCreateRequest,
     MonitorList,
     MonitorPageChange,
@@ -117,6 +126,9 @@ from ._models import Stats1 as CrawlStats
 from ._models import User as ReviewUser
 
 __all__ = [
+    "AIOverview",
+    "AIProduct",
+    "AISource",
     "Account",
     "AccountKey",
     "AccountMonth",
@@ -132,6 +144,11 @@ __all__ = [
     "AnswerStreamDone",
     "AnswerStreamEvent",
     "AnswerStreamResults",
+    "AssistantEcho",
+    "AssistantEndpoint",
+    "AssistantParams",
+    "AssistantRequest",
+    "AssistantResponse",
     "AutocompleteResponse",
     "Batch",
     "BatchCreateRequest",
@@ -142,6 +159,8 @@ __all__ = [
     "CSEItem",
     "CSEResponse",
     "CSESearchInformation",
+    "ChatGPTParams",
+    "ChatGPTRequest",
     "Citation",
     "CrawlPage",
     "CrawlProgress",
@@ -169,8 +188,10 @@ __all__ = [
     "MapRequest",
     "MapResponse",
     "MapURL",
+    "Mention",
     "Meta",
     "Monitor",
+    "MonitorAnswer",
     "MonitorCreateRequest",
     "MonitorEndpoint",
     "MonitorInterval",
@@ -278,8 +299,12 @@ DomainList = Union[str, Sequence[str]]
 """Domains as a list or a comma-separated string: a host, a host with a path prefix or a TLD."""
 DateLike = Union[str, datetime.date]
 """A ``YYYY-MM-DD`` string or a ``datetime.date``."""
-MonitorEndpoint = Literal["search", "news", "webpage"]
-"""``search`` / ``news``: new results for ``q``; ``webpage``: content changes of ``url``."""
+AssistantEndpoint = Literal["chatgpt", "gemini", "copilot", "ai_mode", "brave_ai"]
+"""The AI assistant endpoints (also accepted by batches and monitors)."""
+MonitorEndpoint = Literal["search", "news", "webpage", "chatgpt", "gemini", "copilot", "ai_mode", "brave_ai"]
+"""``search`` / ``news``: new results for ``q``; ``webpage``: content changes of ``url``; an AI
+assistant (``chatgpt``, ``gemini``, ``copilot``, ``ai_mode``, ``brave_ai``): its answer to ``prompt``
+every run (:class:`MonitorAnswer`)."""
 MonitorInterval = Literal["hourly", "daily", "weekly"]
 MonitorRunStatus = Literal["ok", "error", "webhook_failed", "paused"]
 """``MonitorRun.status`` values (models keep it a plain ``str``)."""
@@ -308,6 +333,11 @@ BatchEndpoint = Literal[
     "patents",
     "autocomplete",
     "webpage",
+    "chatgpt",
+    "gemini",
+    "copilot",
+    "ai_mode",
+    "brave_ai",
 ]
 
 
@@ -389,6 +419,38 @@ class AnswerParams(TypedDict, total=False):
     boost_domains: Optional[DomainList]
     start_date: Optional[DateLike]
     end_date: Optional[DateLike]
+
+
+class AssistantParams(TypedDict, total=False):
+    """Options of :meth:`SerpKite.gemini`, ``copilot``, ``ai_mode`` and ``brave_ai`` (``prompt``,
+    ``format`` and ``fields`` are arguments of their own). ``None`` values are dropped."""
+
+    country: Optional[str]
+    """Ask from this country (ISO 3166-1 alpha-2): answers, prices and shops follow it."""
+    language: Optional[str]
+    """Interface language (e.g. ``en``, ``de``); the answer follows the prompt's language."""
+    track: Optional[Sequence[str]]
+    """Brands (``"Acme"``) and domains (``"acme.com"``, subdomains match), at most 20, checked
+    against the answer; each comes back in ``mentions``."""
+    include_html: Optional[bool]
+    """Also return the answer page's HTML (``html``)."""
+    max_age: Optional[int]
+    """Accept a cached answer up to this many seconds old (half price; answers are cached for at
+    most an hour)."""
+
+
+class ChatGPTParams(TypedDict, total=False):
+    """Options of :meth:`SerpKite.chatgpt`: like :class:`AssistantParams` plus ``web_search``,
+    without ``language``."""
+
+    web_search: Optional[bool]
+    """Make ChatGPT search the web (default ``True``); ``False`` lets it decide."""
+    country: Optional[str]
+    """Ask from an exit in this country (residential proxies); without it any of our exits asks."""
+    track: Optional[Sequence[str]]
+    """Brands and domains to check the answer for; each comes back in ``mentions``."""
+    include_html: Optional[bool]
+    max_age: Optional[int]
 
 
 class MonitorSearchParams(TypedDict, total=False):

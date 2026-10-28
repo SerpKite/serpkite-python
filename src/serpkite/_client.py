@@ -13,10 +13,12 @@ from typing_extensions import Self, Unpack
 
 from ._answer import (
     ANSWER_WAIT,
+    ASSISTANT_WAIT,
     STREAM_HEADERS,
     Schema,
     aiter_events,
     answer_body,
+    assistant_body,
     extract_ai_wait,
     iter_events,
     json_as_events,
@@ -51,10 +53,13 @@ from .types import (
     AnswerParams,
     AnswerResponse,
     AnswerStreamEvent,
+    AssistantParams,
+    AssistantResponse,
     AutocompleteResponse,
     Batch,
     BatchCreateResponse,
     BatchEndpoint,
+    ChatGPTParams,
     CrawlTask,
     DomainList,
     ExtractResponse,
@@ -318,6 +323,15 @@ class SerpKite:
     ) -> Any:
         response = self._send("POST", path, vertical_body(base, fmt, fields))
         return parse_body(response, model, fmt, fields)
+
+    def _assistant(
+        self, path: str, prompt: str, params: Mapping[str, Any], fmt: Optional[str], fields: Optional[str]
+    ) -> Any:
+        # Billed even when the response is lost: no retry on 5xx or a read timeout (failed,
+        # refused and empty answers are free), and each attempt waits for a 10-90 s answer.
+        body = vertical_body(assistant_body(prompt, params), fmt, fields)
+        response = self._send("POST", path, body, idempotent=False, min_timeout=ASSISTANT_WAIT)
+        return parse_body(response, AssistantResponse, fmt, fields)
 
     def request(self, endpoint: str, params: Mapping[str, Any]) -> Any:
         """Low-level call: POST ``params`` to ``/v1/<endpoint>`` (e.g. ``"search"``, ``"news"``).
@@ -920,6 +934,257 @@ class SerpKite:
             body["include_images"] = True
         return self._vertical("/v1/webpage", WebpageResponse, body, format, None)
 
+    @overload
+    def chatgpt(
+        self,
+        prompt: str,
+        *,
+        format: Literal["markdown"],
+        fields: Optional[str] = None,
+        **params: Unpack[ChatGPTParams],
+    ) -> str: ...
+    @overload
+    def chatgpt(
+        self,
+        prompt: str,
+        *,
+        format: Literal["compact"],
+        fields: Optional[str] = None,
+        **params: Unpack[ChatGPTParams],
+    ) -> dict[str, Any]: ...
+    @overload
+    def chatgpt(
+        self,
+        prompt: str,
+        *,
+        format: Optional[Literal["json"]] = None,
+        fields: str,
+        **params: Unpack[ChatGPTParams],
+    ) -> dict[str, Any]: ...
+    @overload
+    def chatgpt(
+        self,
+        prompt: str,
+        *,
+        format: Optional[Literal["json"]] = None,
+        fields: None = None,
+        **params: Unpack[ChatGPTParams],
+    ) -> AssistantResponse: ...
+    def chatgpt(
+        self,
+        prompt: str,
+        *,
+        format: Optional[Format] = None,
+        fields: Optional[str] = None,
+        **params: Unpack[ChatGPTParams],
+    ) -> Union[AssistantResponse, str, dict[str, Any]]:
+        """Ask ChatGPT as a logged-out user (5 credits): the answer (``text``, ``markdown`` with
+        ``[n](link)`` citations), cited ``sources``, ``search_queries``, ``products``, ``places``
+        and the guest ``model``.
+
+        ``web_search`` (default ``True``) makes ChatGPT search the web; ``country`` asks from an
+        exit in that country. ``track`` (brands and domains) adds ``mentions``. Answers take
+        20-90 s: each attempt waits at least 120 s and is retried only on 429 (failed, refused
+        and empty answers are free; a lost response is billed). ``format="markdown"`` returns a
+        ``str``; ``format="compact"`` or ``fields=...`` a plain ``dict``."""
+        return self._assistant("/v1/chatgpt", prompt, params, format, fields)
+
+    @overload
+    def gemini(
+        self,
+        prompt: str,
+        *,
+        format: Literal["markdown"],
+        fields: Optional[str] = None,
+        **params: Unpack[AssistantParams],
+    ) -> str: ...
+    @overload
+    def gemini(
+        self,
+        prompt: str,
+        *,
+        format: Literal["compact"],
+        fields: Optional[str] = None,
+        **params: Unpack[AssistantParams],
+    ) -> dict[str, Any]: ...
+    @overload
+    def gemini(
+        self,
+        prompt: str,
+        *,
+        format: Optional[Literal["json"]] = None,
+        fields: str,
+        **params: Unpack[AssistantParams],
+    ) -> dict[str, Any]: ...
+    @overload
+    def gemini(
+        self,
+        prompt: str,
+        *,
+        format: Optional[Literal["json"]] = None,
+        fields: None = None,
+        **params: Unpack[AssistantParams],
+    ) -> AssistantResponse: ...
+    def gemini(
+        self,
+        prompt: str,
+        *,
+        format: Optional[Format] = None,
+        fields: Optional[str] = None,
+        **params: Unpack[AssistantParams],
+    ) -> Union[AssistantResponse, str, dict[str, Any]]:
+        """Ask Google Gemini as a logged-out user (5 credits): the answer with the sources it
+        grounded on. Grounded answers take 40-90 s. See :meth:`chatgpt` for the response,
+        ``track``, timeouts, retries and ``format``."""
+        return self._assistant("/v1/gemini", prompt, params, format, fields)
+
+    @overload
+    def copilot(
+        self,
+        prompt: str,
+        *,
+        format: Literal["markdown"],
+        fields: Optional[str] = None,
+        **params: Unpack[AssistantParams],
+    ) -> str: ...
+    @overload
+    def copilot(
+        self,
+        prompt: str,
+        *,
+        format: Literal["compact"],
+        fields: Optional[str] = None,
+        **params: Unpack[AssistantParams],
+    ) -> dict[str, Any]: ...
+    @overload
+    def copilot(
+        self,
+        prompt: str,
+        *,
+        format: Optional[Literal["json"]] = None,
+        fields: str,
+        **params: Unpack[AssistantParams],
+    ) -> dict[str, Any]: ...
+    @overload
+    def copilot(
+        self,
+        prompt: str,
+        *,
+        format: Optional[Literal["json"]] = None,
+        fields: None = None,
+        **params: Unpack[AssistantParams],
+    ) -> AssistantResponse: ...
+    def copilot(
+        self,
+        prompt: str,
+        *,
+        format: Optional[Format] = None,
+        fields: Optional[str] = None,
+        **params: Unpack[AssistantParams],
+    ) -> Union[AssistantResponse, str, dict[str, Any]]:
+        """Microsoft Copilot Search on Bing (3 credits): the answer, cited sources and Bing's
+        sponsored product cards. ``country`` and ``language`` set Bing's market. 15-40 s. See
+        :meth:`chatgpt` for the response, ``track``, timeouts, retries and ``format``."""
+        return self._assistant("/v1/copilot", prompt, params, format, fields)
+
+    @overload
+    def ai_mode(
+        self,
+        prompt: str,
+        *,
+        format: Literal["markdown"],
+        fields: Optional[str] = None,
+        **params: Unpack[AssistantParams],
+    ) -> str: ...
+    @overload
+    def ai_mode(
+        self,
+        prompt: str,
+        *,
+        format: Literal["compact"],
+        fields: Optional[str] = None,
+        **params: Unpack[AssistantParams],
+    ) -> dict[str, Any]: ...
+    @overload
+    def ai_mode(
+        self,
+        prompt: str,
+        *,
+        format: Optional[Literal["json"]] = None,
+        fields: str,
+        **params: Unpack[AssistantParams],
+    ) -> dict[str, Any]: ...
+    @overload
+    def ai_mode(
+        self,
+        prompt: str,
+        *,
+        format: Optional[Literal["json"]] = None,
+        fields: None = None,
+        **params: Unpack[AssistantParams],
+    ) -> AssistantResponse: ...
+    def ai_mode(
+        self,
+        prompt: str,
+        *,
+        format: Optional[Format] = None,
+        fields: Optional[str] = None,
+        **params: Unpack[AssistantParams],
+    ) -> Union[AssistantResponse, str, dict[str, Any]]:
+        """Google AI Mode (3 credits): the answer, cited sources and products. ``country`` is the
+        country Google answers for. 10-45 s. See :meth:`chatgpt` for the response, ``track``,
+        timeouts, retries and ``format``."""
+        return self._assistant("/v1/ai_mode", prompt, params, format, fields)
+
+    @overload
+    def brave_ai(
+        self,
+        prompt: str,
+        *,
+        format: Literal["markdown"],
+        fields: Optional[str] = None,
+        **params: Unpack[AssistantParams],
+    ) -> str: ...
+    @overload
+    def brave_ai(
+        self,
+        prompt: str,
+        *,
+        format: Literal["compact"],
+        fields: Optional[str] = None,
+        **params: Unpack[AssistantParams],
+    ) -> dict[str, Any]: ...
+    @overload
+    def brave_ai(
+        self,
+        prompt: str,
+        *,
+        format: Optional[Literal["json"]] = None,
+        fields: str,
+        **params: Unpack[AssistantParams],
+    ) -> dict[str, Any]: ...
+    @overload
+    def brave_ai(
+        self,
+        prompt: str,
+        *,
+        format: Optional[Literal["json"]] = None,
+        fields: None = None,
+        **params: Unpack[AssistantParams],
+    ) -> AssistantResponse: ...
+    def brave_ai(
+        self,
+        prompt: str,
+        *,
+        format: Optional[Format] = None,
+        fields: Optional[str] = None,
+        **params: Unpack[AssistantParams],
+    ) -> Union[AssistantResponse, str, dict[str, Any]]:
+        """Brave Search's AI answer (2 credits): cited sources, the searches it ran and products.
+        ``country`` sets Brave's market. About 10 s. See :meth:`chatgpt` for the response,
+        ``track``, timeouts, retries and ``format``."""
+        return self._assistant("/v1/brave_ai", prompt, params, format, fields)
+
     def extract(
         self,
         urls: Sequence[str],
@@ -1316,6 +1581,15 @@ class AsyncSerpKite:
     ) -> Any:
         response = await self._send("POST", path, vertical_body(base, fmt, fields))
         return parse_body(response, model, fmt, fields)
+
+    async def _assistant(
+        self, path: str, prompt: str, params: Mapping[str, Any], fmt: Optional[str], fields: Optional[str]
+    ) -> Any:
+        # Billed even when the response is lost: no retry on 5xx or a read timeout (failed,
+        # refused and empty answers are free), and each attempt waits for a 10-90 s answer.
+        body = vertical_body(assistant_body(prompt, params), fmt, fields)
+        response = await self._send("POST", path, body, idempotent=False, min_timeout=ASSISTANT_WAIT)
+        return parse_body(response, AssistantResponse, fmt, fields)
 
     async def request(self, endpoint: str, params: Mapping[str, Any]) -> Any:
         """Low-level call: POST ``params`` to ``/v1/<endpoint>`` (e.g. ``"search"``, ``"news"``).
@@ -1919,6 +2193,241 @@ class AsyncSerpKite:
         if include_images:
             body["include_images"] = True
         return await self._vertical("/v1/webpage", WebpageResponse, body, format, None)
+
+    @overload
+    async def chatgpt(
+        self,
+        prompt: str,
+        *,
+        format: Literal["markdown"],
+        fields: Optional[str] = None,
+        **params: Unpack[ChatGPTParams],
+    ) -> str: ...
+    @overload
+    async def chatgpt(
+        self,
+        prompt: str,
+        *,
+        format: Literal["compact"],
+        fields: Optional[str] = None,
+        **params: Unpack[ChatGPTParams],
+    ) -> dict[str, Any]: ...
+    @overload
+    async def chatgpt(
+        self,
+        prompt: str,
+        *,
+        format: Optional[Literal["json"]] = None,
+        fields: str,
+        **params: Unpack[ChatGPTParams],
+    ) -> dict[str, Any]: ...
+    @overload
+    async def chatgpt(
+        self,
+        prompt: str,
+        *,
+        format: Optional[Literal["json"]] = None,
+        fields: None = None,
+        **params: Unpack[ChatGPTParams],
+    ) -> AssistantResponse: ...
+    async def chatgpt(
+        self,
+        prompt: str,
+        *,
+        format: Optional[Format] = None,
+        fields: Optional[str] = None,
+        **params: Unpack[ChatGPTParams],
+    ) -> Union[AssistantResponse, str, dict[str, Any]]:
+        """See :meth:`SerpKite.chatgpt`."""
+        return await self._assistant("/v1/chatgpt", prompt, params, format, fields)
+
+    @overload
+    async def gemini(
+        self,
+        prompt: str,
+        *,
+        format: Literal["markdown"],
+        fields: Optional[str] = None,
+        **params: Unpack[AssistantParams],
+    ) -> str: ...
+    @overload
+    async def gemini(
+        self,
+        prompt: str,
+        *,
+        format: Literal["compact"],
+        fields: Optional[str] = None,
+        **params: Unpack[AssistantParams],
+    ) -> dict[str, Any]: ...
+    @overload
+    async def gemini(
+        self,
+        prompt: str,
+        *,
+        format: Optional[Literal["json"]] = None,
+        fields: str,
+        **params: Unpack[AssistantParams],
+    ) -> dict[str, Any]: ...
+    @overload
+    async def gemini(
+        self,
+        prompt: str,
+        *,
+        format: Optional[Literal["json"]] = None,
+        fields: None = None,
+        **params: Unpack[AssistantParams],
+    ) -> AssistantResponse: ...
+    async def gemini(
+        self,
+        prompt: str,
+        *,
+        format: Optional[Format] = None,
+        fields: Optional[str] = None,
+        **params: Unpack[AssistantParams],
+    ) -> Union[AssistantResponse, str, dict[str, Any]]:
+        """See :meth:`SerpKite.gemini`."""
+        return await self._assistant("/v1/gemini", prompt, params, format, fields)
+
+    @overload
+    async def copilot(
+        self,
+        prompt: str,
+        *,
+        format: Literal["markdown"],
+        fields: Optional[str] = None,
+        **params: Unpack[AssistantParams],
+    ) -> str: ...
+    @overload
+    async def copilot(
+        self,
+        prompt: str,
+        *,
+        format: Literal["compact"],
+        fields: Optional[str] = None,
+        **params: Unpack[AssistantParams],
+    ) -> dict[str, Any]: ...
+    @overload
+    async def copilot(
+        self,
+        prompt: str,
+        *,
+        format: Optional[Literal["json"]] = None,
+        fields: str,
+        **params: Unpack[AssistantParams],
+    ) -> dict[str, Any]: ...
+    @overload
+    async def copilot(
+        self,
+        prompt: str,
+        *,
+        format: Optional[Literal["json"]] = None,
+        fields: None = None,
+        **params: Unpack[AssistantParams],
+    ) -> AssistantResponse: ...
+    async def copilot(
+        self,
+        prompt: str,
+        *,
+        format: Optional[Format] = None,
+        fields: Optional[str] = None,
+        **params: Unpack[AssistantParams],
+    ) -> Union[AssistantResponse, str, dict[str, Any]]:
+        """See :meth:`SerpKite.copilot`."""
+        return await self._assistant("/v1/copilot", prompt, params, format, fields)
+
+    @overload
+    async def ai_mode(
+        self,
+        prompt: str,
+        *,
+        format: Literal["markdown"],
+        fields: Optional[str] = None,
+        **params: Unpack[AssistantParams],
+    ) -> str: ...
+    @overload
+    async def ai_mode(
+        self,
+        prompt: str,
+        *,
+        format: Literal["compact"],
+        fields: Optional[str] = None,
+        **params: Unpack[AssistantParams],
+    ) -> dict[str, Any]: ...
+    @overload
+    async def ai_mode(
+        self,
+        prompt: str,
+        *,
+        format: Optional[Literal["json"]] = None,
+        fields: str,
+        **params: Unpack[AssistantParams],
+    ) -> dict[str, Any]: ...
+    @overload
+    async def ai_mode(
+        self,
+        prompt: str,
+        *,
+        format: Optional[Literal["json"]] = None,
+        fields: None = None,
+        **params: Unpack[AssistantParams],
+    ) -> AssistantResponse: ...
+    async def ai_mode(
+        self,
+        prompt: str,
+        *,
+        format: Optional[Format] = None,
+        fields: Optional[str] = None,
+        **params: Unpack[AssistantParams],
+    ) -> Union[AssistantResponse, str, dict[str, Any]]:
+        """See :meth:`SerpKite.ai_mode`."""
+        return await self._assistant("/v1/ai_mode", prompt, params, format, fields)
+
+    @overload
+    async def brave_ai(
+        self,
+        prompt: str,
+        *,
+        format: Literal["markdown"],
+        fields: Optional[str] = None,
+        **params: Unpack[AssistantParams],
+    ) -> str: ...
+    @overload
+    async def brave_ai(
+        self,
+        prompt: str,
+        *,
+        format: Literal["compact"],
+        fields: Optional[str] = None,
+        **params: Unpack[AssistantParams],
+    ) -> dict[str, Any]: ...
+    @overload
+    async def brave_ai(
+        self,
+        prompt: str,
+        *,
+        format: Optional[Literal["json"]] = None,
+        fields: str,
+        **params: Unpack[AssistantParams],
+    ) -> dict[str, Any]: ...
+    @overload
+    async def brave_ai(
+        self,
+        prompt: str,
+        *,
+        format: Optional[Literal["json"]] = None,
+        fields: None = None,
+        **params: Unpack[AssistantParams],
+    ) -> AssistantResponse: ...
+    async def brave_ai(
+        self,
+        prompt: str,
+        *,
+        format: Optional[Format] = None,
+        fields: Optional[str] = None,
+        **params: Unpack[AssistantParams],
+    ) -> Union[AssistantResponse, str, dict[str, Any]]:
+        """See :meth:`SerpKite.brave_ai`."""
+        return await self._assistant("/v1/brave_ai", prompt, params, format, fields)
 
     async def extract(
         self,

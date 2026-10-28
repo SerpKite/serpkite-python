@@ -10,6 +10,7 @@ from typing_extensions import assert_type
 
 from serpkite import AsyncSerpKite, SerpKite
 from serpkite.types import (
+    AssistantResponse,
     NewsResponse,
     PlacesResponse,
     ReviewsResponse,
@@ -53,3 +54,14 @@ def _type_only_checks(sk: SerpKite) -> None:
     assert_type(sk.webpage("https://example.com"), WebpageResponse)
     assert_type(sk.search("q", engine="auto"), SearchResponse)
     assert_type(sk.news("q", engine=["google", "brave"]), NewsResponse)
+    assert_type(sk.chatgpt("p", web_search=False, track=["acme.com"]), AssistantResponse)
+    assert_type(sk.gemini("p", format="markdown"), str)
+    assert_type(sk.ai_mode("p", format="compact"), dict[str, Any])
+    assert_type(sk.copilot("p", fields="text"), dict[str, Any])
+    assert_type(sk.brave_ai("p", country="us", language="en"), AssistantResponse)
+
+
+async def _async_type_only_checks(sk: AsyncSerpKite) -> None:
+    """Never called: mypy checks the inferred types."""
+    assert_type(await sk.chatgpt("p"), AssistantResponse)
+    assert_type(await sk.brave_ai("p", format="markdown"), str)

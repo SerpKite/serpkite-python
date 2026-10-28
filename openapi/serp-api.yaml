@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SerpKite SERP API
-  version: 1.11.0
+  version: 1.12.0
   description: |
     Public search API (api.serpkite.com). Google results as clean JSON or Markdown
     for AI agents, plus a Google Custom Search–compatible endpoint. Official SDKs:
@@ -56,6 +56,16 @@ info:
     `/v1/extract` `summary` = +4 and `output_schema` = +4 per page;
     `/v1/research` = lite 30, standard 75, deep 200. Responses that used a
     model carry `meta.llm`.
+
+    **AI assistants** (`/v1/chatgpt`, `/v1/gemini`, `/v1/copilot`,
+    `/v1/ai_mode`, `/v1/brave_ai`): a `prompt` sent to the public assistant
+    as a logged-out user, through our proxies; the response is its answer
+    (`text`, `markdown`) with the `sources` it cited or listed,
+    `search_queries`, `products` and `places` where the assistant shows them,
+    and `mentions` for the brands and domains in `track`. ChatGPT 5, Gemini 5,
+    Copilot 3, AI Mode 3, Brave AI 2 credits per answer, the same in batches;
+    a cache hit (`max_age`) ×0.5; failed, refused and empty answers are free.
+    Answers take 10–90 s: run many through `POST /v1/batches` or a monitor.
 servers:
   - url: https://api.serpkite.com
   - url: http://localhost:8080
@@ -324,6 +334,90 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Unavailable" }
+  /v1/chatgpt:
+    post:
+      summary: Ask ChatGPT as a logged-out user and get its answer, cited sources, products and places (5 credits)
+      operationId: chatgpt
+      description: |
+        Opens chatgpt.com as a logged-out visitor in a standard Chrome behind our
+        proxies, sends `prompt` and returns the answer. With `web_search` (default
+        true) ChatGPT searches the web; `false` lets it decide. ChatGPT localises
+        prices, shops and places to where the visitor is: set `country` to ask from
+        an exit in that country (residential proxies), or leave it out to ask from
+        any of our exits. Guests get ChatGPT's default free model (`model`).
+        Takes 20–90 s; failed or refused answers are free.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChatGPTRequest" }
+            example: { prompt: "What are the best CRMs for a 10-person startup?", track: ["hubspot.com", "Pipedrive"] }
+      responses: &assistantResponses
+        "200": { $ref: "#/components/responses/AssistantOK" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "402": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /v1/gemini:
+    post:
+      summary: Ask Google Gemini as a logged-out user and get its answer with the sources it grounded on (5 credits)
+      operationId: gemini
+      description: |
+        Opens gemini.google.com as a logged-out visitor and sends `prompt`. Gemini
+        answers guests from residential and ISP exits only; grounded answers take
+        40–90 s. `country` asks from an exit in that country.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssistantRequest" }
+            example: { prompt: "How do heat pumps work in cold climates?" }
+      responses: *assistantResponses
+  /v1/copilot:
+    post:
+      summary: Ask Microsoft Copilot Search on Bing and get its answer, cited sources and products (3 credits)
+      operationId: copilot
+      description: |
+        Microsoft Copilot Search (bing.com/copilotsearch, Bing's AI answer).
+        The Copilot app itself has no logged-out access. `country` and `language`
+        set Bing's market. Products are Bing's sponsored product cards. 15–40 s.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssistantRequest" }
+            example: { prompt: "best mattress for side sleepers", country: us }
+      responses: *assistantResponses
+  /v1/ai_mode:
+    post:
+      summary: Ask Google AI Mode and get its answer, cited sources and products (3 credits)
+      operationId: aiMode
+      description: |
+        Google's AI Mode (`udm=50`) for `prompt`, logged out. `country` is the
+        country Google answers for. 10–45 s.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssistantRequest" }
+            example: { prompt: "how to remove a red wine stain from a wool carpet" }
+      responses: *assistantResponses
+  /v1/brave_ai:
+    post:
+      summary: Ask Brave Search's AI answer and get it with cited sources, the searches it ran and products (2 credits)
+      operationId: braveAi
+      description: |
+        Brave Search's AI answer ("Ask Brave") for `prompt`, logged out. `country`
+        sets Brave's market (prices and shops follow it). About 10 s.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssistantRequest" }
+            example: { prompt: "best budget noise cancelling headphones under $100" }
+      responses: *assistantResponses
   /v1/extract:
     post:
       summary: Up to 20 URLs (HTML or PDF) as Markdown, text or HTML, with query-ranked highlights, links, images, an AI summary or JSON extracted with a schema (1 credit per URL read)
@@ -608,6 +702,13 @@ paths:
         account (403 `forbidden`). A monitor pauses itself after 10 failed runs in a row
         (search errors, insufficient credits or webhook failures) or when its key is
         revoked; set `active: true` to resume.
+
+        With an AI assistant `endpoint` (chatgpt, gemini, copilot, ai_mode,
+        brave_ai) the monitor asks `prompt` every run and reports every answer
+        (AI visibility is tracked over time): `text`, `markdown`, `sources`,
+        `new_sources` (links not seen in earlier runs), `search_queries`,
+        `products` and, with `track`, `mentions`. Each run costs the endpoint's
+        price.
       requestBody:
         required: true
         content:
@@ -1183,6 +1284,14 @@ components:
               - { url: "https://docs.example.com/install", lastmod: "2026-09-01", source: sitemap }
               - { url: "https://docs.example.com/guide", title: Guide, source: page }
             meta: { request_id: req_01J9, credits_used: 1, latency_ms: 840, count: 2 }
+    AssistantOK:
+      description: OK (text/markdown when format=markdown)
+      headers: *billingHeaders
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/AssistantResponse" }
+        text/markdown:
+          schema: { type: string }
     WebpageOK:
       description: OK (text/markdown when format=markdown)
       headers: *billingHeaders
@@ -1327,6 +1436,108 @@ components:
         fields: { type: string }
         max_age: { type: integer, minimum: 0, description: Accept a cached result up to this many seconds old (50% of credits on a hit) }
         engine: { $ref: "#/components/schemas/EngineParam" }
+
+    AssistantRequest:
+      type: object
+      required: [prompt]
+      properties:
+        prompt: { type: string, minLength: 1, maxLength: 4000, description: The message to the assistant }
+        country: { type: string, description: "Ask from this country (ISO 3166-1 alpha-2): answers, prices and shops follow it" }
+        language: { type: string, description: "Interface language (e.g. en, de); the answer follows the prompt's language" }
+        track: { $ref: "#/components/schemas/TrackList" }
+        include_html: { type: boolean, default: false, description: "Also return the answer page's HTML (`html`)" }
+        format: { type: string, enum: [json, markdown, compact], default: json }
+        fields: { type: string }
+        max_age: { type: integer, minimum: 0, maximum: 2592000, description: "Accept a cached answer up to this many seconds old (half price); answers are cached for at most an hour" }
+    ChatGPTRequest:
+      type: object
+      required: [prompt]
+      properties:
+        prompt: { type: string, minLength: 1, maxLength: 4000, description: The message to ChatGPT }
+        web_search: { type: boolean, default: true, description: "Make ChatGPT search the web; false lets it decide (it then searches for about two thirds of shopping and local prompts)" }
+        country: { type: string, description: "Ask from an exit in this country (ISO 3166-1 alpha-2, residential proxies). Without it any of our exits asks (mostly US and EU)" }
+        track: { $ref: "#/components/schemas/TrackList" }
+        include_html: { type: boolean, default: false }
+        format: { type: string, enum: [json, markdown, compact], default: json }
+        fields: { type: string }
+        max_age: { type: integer, minimum: 0, maximum: 2592000 }
+    TrackList:
+      type: array
+      maxItems: 20
+      items: { type: string, maxLength: 100 }
+      description: "Brands (\"Acme\") and domains (\"acme.com\", subdomains match) to check the answer for; each comes back in `mentions`"
+    AISource:
+      type: object
+      required: [position, link, domain, cited]
+      properties:
+        position: { type: integer, description: "The number the answer cites it with ([n] in markdown)" }
+        title: { type: string }
+        link: { type: string }
+        domain: { type: string }
+        snippet: { type: string }
+        date: { type: string }
+        cited: { type: boolean, description: "Cited inline in the answer (false: only listed beside it)" }
+    AIProduct:
+      type: object
+      required: [position, title]
+      properties:
+        position: { type: integer }
+        title: { type: string }
+        brand: { type: string }
+        price: { type: string, description: As shown, e.g. "€69.90" }
+        extracted_price: { type: number }
+        currency: { type: string, description: ISO 4217 when the symbol is unambiguous }
+        rating: { type: number }
+        reviews: { type: integer }
+        merchant: { type: string }
+        link: { type: string }
+        image: { type: string }
+        description: { type: string }
+        sponsored: { type: boolean, description: A paid placement (an ad card shown with the answer) }
+    Mention:
+      type: object
+      required: [term, mentioned, cited, sources, text_position]
+      properties:
+        term: { type: string }
+        mentioned: { type: boolean, description: "The answer text names it (a domain: names the domain)" }
+        cited: { type: boolean, description: A cited source matches it }
+        sources: { type: array, items: { type: integer }, description: Positions of the matching sources }
+        products: { type: array, items: { type: integer }, description: Positions of the matching products }
+        text_position: { type: number, description: "Where the text first names it, 0 (start) to 1 (end); -1 when it doesn't" }
+    AssistantEcho:
+      type: object
+      description: The normalised request of an AI assistant endpoint (the path names the assistant, so there is no engine)
+      required: [endpoint, prompt]
+      properties:
+        endpoint: { type: string, examples: [chatgpt, gemini] }
+        prompt: { type: string }
+        country: { type: string }
+        language: { type: string, description: Not on chatgpt }
+        web_search: { type: boolean, description: chatgpt only }
+        include_html: { type: boolean }
+    AssistantResponse:
+      type: object
+      required: [request, text, markdown, sources, search_queries, products, meta]
+      properties:
+        request: { $ref: "#/components/schemas/AssistantEcho" }
+        text: { type: string, description: The answer as plain text }
+        markdown: { type: string, description: "The answer as Markdown, citations as [n](link) matching sources[].position" }
+        html: { type: string, description: Only with include_html=true }
+        model: { type: string, description: "The model the assistant reports, when it does (e.g. ChatGPT's guest model)" }
+        sources: { type: array, items: { $ref: "#/components/schemas/AISource" } }
+        search_queries: { type: array, items: { type: string }, description: The searches the assistant ran (fan-out) where it shows them }
+        products: { type: array, items: { $ref: "#/components/schemas/AIProduct" } }
+        places: { type: array, items: { $ref: "#/components/schemas/PlaceResult" }, description: Local businesses the answer showed }
+        related_questions: { type: array, items: { type: string } }
+        mentions: { type: array, items: { $ref: "#/components/schemas/Mention" }, description: With track only }
+        meta: { $ref: "#/components/schemas/Meta" }
+    AIOverview:
+      type: object
+      required: [text, markdown, sources]
+      properties:
+        text: { type: string }
+        markdown: { type: string, description: "Citations as [n](link) matching sources[].position" }
+        sources: { type: array, items: { $ref: "#/components/schemas/AISource" } }
 
     WebpageRequest:
       type: object
@@ -1857,7 +2068,7 @@ components:
       required: [endpoint, engine]
       additionalProperties: true
       properties:
-        endpoint: { type: string, examples: [search, news, webpage] }
+        endpoint: { type: string, examples: [search, news, webpage, chatgpt] }
         engine:
           description: The engine policy as asked (google, auto, one provider or a list)
           oneOf:
@@ -1888,6 +2099,9 @@ components:
         boost_domains: { type: array, items: { type: string } }
         highlights: { type: boolean }
         include_answer: { type: boolean }
+        prompt: { type: string, description: AI assistant endpoints }
+        web_search: { type: boolean, description: /v1/chatgpt }
+        include_html: { type: boolean }
 
     Sitelink:
       type: object
@@ -1974,6 +2188,7 @@ components:
         top_stories: { type: array, items: { $ref: "#/components/schemas/NewsResult" } }
         places: { type: array, items: { $ref: "#/components/schemas/PlaceResult" } }
         answer: { $ref: "#/components/schemas/SearchAnswer" }
+        ai_overview: { $ref: "#/components/schemas/AIOverview", description: "Google's AI Overview when the page showed one" }
         meta: { $ref: "#/components/schemas/Meta" }
 
     ImageResult:
@@ -2352,7 +2567,7 @@ components:
       properties:
         endpoint:
           type: string
-          enum: [search, images, videos, news, maps, places, place, reviews, shopping, scholar, patents, autocomplete, webpage]
+          enum: [search, images, videos, news, maps, places, place, reviews, shopping, scholar, patents, autocomplete, webpage, chatgpt, gemini, copilot, ai_mode, brave_ai]
         requests:
           type: array
           minItems: 1
@@ -2426,10 +2641,13 @@ components:
 
     MonitorSearch:
       type: object
-      description: "The saved request a monitor reruns: a search (q and options) or, for webpage monitors, url (and country)"
+      description: "The saved request a monitor reruns: a search (q and options), for webpage monitors url (and country), or for AI assistant monitors prompt (with country, language, web_search and track)"
       properties:
         q: { type: string }
         url: { type: string }
+        prompt: { type: string, description: AI assistant monitors }
+        web_search: { type: boolean, description: endpoint=chatgpt }
+        track: { type: array, items: { type: string } }
         country: { type: string }
         language: { type: string }
         location: { type: string }
@@ -2443,11 +2661,14 @@ components:
 
     MonitorCreateRequest:
       type: object
-      description: "Search and news monitors need `q`; webpage monitors need `url` and take only `country` besides"
+      description: "Search and news monitors need `q`; webpage monitors need `url` and take only `country` besides; AI assistant monitors need `prompt` and take `country`, `language` (not chatgpt), `web_search` (chatgpt) and `track`"
       properties:
         q: { type: string, minLength: 1, maxLength: 2048 }
         url: { type: string, format: uri, description: "endpoint=webpage: the page to watch for content changes" }
-        endpoint: { type: string, enum: [search, news, webpage], default: search }
+        prompt: { type: string, minLength: 1, maxLength: 4000, description: "AI assistant monitors: the prompt asked every run" }
+        web_search: { type: boolean, description: endpoint=chatgpt }
+        track: { $ref: "#/components/schemas/TrackList" }
+        endpoint: { type: string, enum: [search, news, webpage, chatgpt, gemini, copilot, ai_mode, brave_ai], default: search }
         metadata: { type: object, additionalProperties: true, description: "Your own JSON object (at most 2 KB), echoed on the monitor and in its webhooks" }
         name: { type: string, maxLength: 200 }
         interval: { type: string, enum: [hourly, daily, weekly], default: daily }
@@ -2475,8 +2696,11 @@ components:
         webhook_url: { type: string, description: "A webhook URL, or an empty string to remove it" }
         active: { type: boolean, description: "true resumes a paused monitor (due now, failure streak cleared)" }
         metadata: { type: [object, "null"], additionalProperties: true, description: Replaces the metadata (null clears it) }
-        endpoint: { type: string, enum: [search, news, webpage], description: "Switching between a search and a page drops the other kind's fields" }
+        endpoint: { type: string, enum: [search, news, webpage, chatgpt, gemini, copilot, ai_mode, brave_ai], description: "Switching between a search, a page and an AI prompt drops the other kinds' fields" }
         q: { type: string, minLength: 1, maxLength: 2048 }
+        prompt: { type: string, minLength: 1, maxLength: 4000 }
+        web_search: { type: boolean }
+        track: { $ref: "#/components/schemas/TrackList" }
         url: { type: string, format: uri, description: endpoint=webpage only }
         country: { type: string }
         language: { type: string }
@@ -2495,7 +2719,7 @@ components:
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
-        endpoint: { type: string, enum: [search, news, webpage] }
+        endpoint: { type: string, enum: [search, news, webpage, chatgpt, gemini, copilot, ai_mode, brave_ai] }
         request: { $ref: "#/components/schemas/MonitorSearch" }
         metadata: { type: [object, "null"], additionalProperties: true }
         interval_seconds: { type: integer }
@@ -2521,7 +2745,7 @@ components:
         new_results: { type: integer }
         results:
           type: [array, "null"]
-          description: The new results (OrganicResult-shaped for search, NewsResult for news, MonitorPageChange for webpage); null when there were none or after 24 hours
+          description: The new results (OrganicResult-shaped for search, NewsResult for news, MonitorPageChange for webpage, one MonitorAnswer per run for AI assistants); null when there were none or after 24 hours
           items: { type: object, additionalProperties: true }
         credits_used: { type: number }
         webhook_status: { type: [string, "null"], enum: [delivered, failed, none, null], description: "none = the monitor has no webhook; null = nothing to send" }
@@ -2539,6 +2763,20 @@ components:
         markdown: { type: string, description: The page's Markdown (up to about 8,000 tokens) }
         published_at: { type: string }
 
+    MonitorAnswer:
+      type: object
+      description: What an AI assistant monitor reports every run (one item per run)
+      required: [text, markdown, sources, new_sources, search_queries]
+      properties:
+        text: { type: string }
+        markdown: { type: string }
+        model: { type: string }
+        sources: { type: array, items: { $ref: "#/components/schemas/AISource" } }
+        new_sources: { type: array, items: { type: string }, description: Links of the sources not seen in earlier runs }
+        search_queries: { type: array, items: { type: string } }
+        products: { type: array, items: { $ref: "#/components/schemas/AIProduct" } }
+        mentions: { type: array, items: { $ref: "#/components/schemas/Mention" }, description: With track only }
+
     MonitorRunList:
       type: object
       required: [results, next_before]
@@ -2555,20 +2793,21 @@ components:
     MonitorResultsEvent:
       type: object
       description: "Body of `monitor.results`"
-      required: [event, monitor_id, run_id, name, endpoint, q, first_run, run_at, new_results, credits_used]
+      required: [event, monitor_id, run_id, name, endpoint, first_run, run_at, new_results, credits_used]
       properties:
         event: { type: string, const: monitor.results }
         monitor_id: { type: string, format: uuid }
         run_id: { type: string, format: uuid, description: Also the X-SerpKite-Delivery header; use it to deduplicate retries }
         name: { type: string }
-        endpoint: { type: string, enum: [search, news, webpage] }
-        q: { type: string, description: The saved query (empty for webpage monitors) }
+        endpoint: { type: string, enum: [search, news, webpage, chatgpt, gemini, copilot, ai_mode, brave_ai] }
+        q: { type: string, description: The saved query (empty for webpage monitors, absent for AI assistant monitors) }
         url: { type: string, description: webpage monitors only }
+        prompt: { type: string, description: AI assistant monitors only (instead of q) }
         metadata: { type: [object, "null"], additionalProperties: true, description: The monitor's metadata }
         first_run: { type: boolean, description: The first run since the monitor was created or its search changed }
         run_at: { type: string, format: date-time }
         new_results:
           type: array
-          description: Results not seen in earlier runs (OrganicResult-shaped for search, NewsResult for news, MonitorPageChange for webpage)
+          description: Results not seen in earlier runs (OrganicResult-shaped for search, NewsResult for news, MonitorPageChange for webpage); for AI assistant monitors the run's answer (one MonitorAnswer, sent every run)
           items: { type: object, additionalProperties: true }
         credits_used: { type: number, description: This run's price }

@@ -78,6 +78,8 @@ Every query vertical takes `q` plus optional keyword parameters: `country`, `lan
 | `sk.rank(q, domain, num=100)` | `/v1/rank` | `RankResponse` (`position` or `None`, `matches`) |
 | `sk.answer(q, depth=, num_sources=, output_schema=, **params)` | `/v1/answer` | `AnswerResponse` (`answer`, `citations`, `results`, `output`) |
 | `sk.answer_stream(q, depth=, num_sources=, **params)` | `/v1/answer` (SSE) | iterator of `AnswerStreamResults`, `AnswerStreamDelta`…, `AnswerStreamDone` |
+| `sk.chatgpt(prompt, web_search=, country=, track=, …)` | `/v1/chatgpt` | `AssistantResponse` |
+| `sk.gemini` / `sk.copilot` / `sk.ai_mode` / `sk.brave_ai(prompt, country=, language=, track=, …)` | `/v1/gemini` … `/v1/brave_ai` | `AssistantResponse` (`text`, `markdown`, `sources`, `search_queries`, `products`, `places`, `mentions`) |
 | `sk.extract(urls, query=, highlights=, format=, summary=, output_schema=, prompt=, …)` | `/v1/extract` | `ExtractResponse` (`results`, `failed`) |
 | `sk.map(url, search=, limit=, sitemap=, include_paths=, …)` | `/v1/map` | `MapResponse` (`results[].url`) |
 | `sk.crawl(url, limit=, max_depth=, …)` / `get_crawl` / `cancel_crawl` / `wait_for_crawl` | `/v1/crawl` | see [Crawl](#crawl) |
@@ -218,9 +220,9 @@ Failed, empty and blocked searches are not billed. The client retries 429s, 5xx 
 connection errors up to `max_retries` times. It uses exponential backoff with jitter and honours
 `Retry-After`. It never retries `daily_limit_reached`. Batch creation is retried only when the
 request provably never reached the server, unless you pass `idempotency_key`. `extract`, `answer`,
-`crawl` and `research` are billed even when the response is lost, so they are retried only on 429
-and connection failures; `answer` and `answer_stream` wait at least 100 s for the response (the
-search runs before the model writes).
+the AI assistants, `crawl` and `research` are billed even when the response is lost, so they are
+retried only on 429 and connection failures; `answer` and `answer_stream` wait at least 100 s for
+the response (the search runs before the model writes), the AI assistants at least 120 s.
 
 ## AI answers
 
@@ -272,6 +274,44 @@ print(pages.results[0].summary, pages.results[0].output)
 - AI prices (answers, `include_answer`, summaries, schema extraction, research) are listed at
   [serpkite.com/pricing](https://serpkite.com/pricing); `meta.credits` on an answer splits the
   search and the model part.
+
+## AI assistants
+
+Ask ChatGPT, Gemini, Copilot (Bing Copilot Search), Google AI Mode or Brave's AI answer a prompt as
+a logged-out user and get the answer with the sources it cited, the searches it ran and the
+products and places it showed. `track` lists brands and domains to look for; each comes back in
+`mentions`.
+
+```python
+res = sk.chatgpt(
+    "What are the best CRMs for a 10-person startup?",
+    country="us",  # ask from an exit in this country (prices and shops follow it)
+    track=["hubspot.com", "Pipedrive"],
+)
+print(res.model, res.markdown)  # citations as [n](link), matching sources[].position
+for s in res.sources:
+    print(s.position, "cited" if s.cited else "listed", s.domain)
+print(res.search_queries, [(p.title, p.price) for p in res.products])
+for m in res.mentions or []:
+    # mentioned: the text names it; cited: a cited source matches it; text_position 0-1 (-1: not named)
+    print(m.term, m.mentioned, m.cited, m.sources, m.text_position)
+
+md = sk.ai_mode("how to remove a red wine stain from wool", format="markdown")  # str
+sk.gemini("Wie funktionieren Wärmepumpen?", country="de", language="de")
+
+# Google's AI Overview on a normal search, when the page shows one
+serp = sk.search("how do heat pumps work")
+if serp.ai_overview:
+    print(serp.ai_overview.text, serp.ai_overview.sources)
+```
+
+- Prices per answer: ChatGPT 5, Gemini 5, Copilot 3, AI Mode 3, Brave AI 2 credits (the same in
+  batches; `max_age` cache hits half). Failed, refused and empty answers are free.
+- Answers take 10-90 s: each attempt waits at least 120 s (raised from the client `timeout`) and
+  is retried only on 429 (a lost response is still billed).
+- `web_search` (default `True`) is ChatGPT only; `language` isn't taken by ChatGPT.
+- Run many prompts with `sk.batches.create("chatgpt", [{"prompt": …}, …])`, or track an answer
+  over time with a monitor (see [Monitors](#monitors)).
 
 ## Research
 
@@ -356,7 +396,19 @@ for run in sk.monitors.iter_runs(mon.id):
 watch = sk.monitors.create(endpoint="webpage", url="https://example.com/pricing", metadata={"customer": "acme"})
 sk.monitors.update(watch.id, metadata=None)  # clears it; leave it out to keep it
 sk.monitors.delete(watch.id)
+
+# Ask an AI assistant every day and see who it cites (each run costs the endpoint's price)
+sk.monitors.create(
+    endpoint="chatgpt",
+    prompt="What are the best CRMs for a 10-person startup?",
+    track=["hubspot.com", "Pipedrive"],
+)
 ```
+
+An AI assistant monitor (`chatgpt`, `gemini`, `copilot`, `ai_mode`, `brave_ai`) reports every
+answer as one result (`MonitorAnswer.model_validate(run.results[0])`: `text`, `markdown`,
+`sources`, `new_sources` (links not seen in earlier runs), `search_queries`, `products` and, with
+`track`, `mentions`); its `monitor.results` webhook carries `prompt` instead of `q`.
 
 Each search run costs what its search costs (1 credit per 10 results, `num` 100 is 7; empty and failed runs are free) and reports only results
 it hasn't seen before (among the top `num`). Without a `webhook_url`, read new results from
