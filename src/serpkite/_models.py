@@ -589,6 +589,7 @@ class Error1(BaseModel):
                 "daily_limit_reached",
                 "spend_cap_reached",
                 "key_limit_reached",
+                "account_restricted",
                 "idempotency_key_reused",
                 "forbidden",
                 "not_found",
@@ -601,7 +602,7 @@ class Error1(BaseModel):
         ),
     ]
     """
-    403: spend_cap_reached, key_limit_reached, forbidden. 409/422: idempotency_key_reused. 429: rate_limited, daily_limit_reached. 503: upstream_error, upstream_blocked, upstream_timeout, unavailable (the API never sends 502 or 504)
+    403: spend_cap_reached, key_limit_reached, account_restricted, forbidden. 409/422: idempotency_key_reused. 429: rate_limited, daily_limit_reached. 503: upstream_error, upstream_blocked, upstream_timeout, unavailable (the API never sends 502 or 504)
     """
     message: str
     request_id: str | None = None

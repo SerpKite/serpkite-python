@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SerpKite SERP API
-  version: 1.12.1
+  version: 1.12.2
   description: |
     Public search API (api.serpkite.com). Google results as clean JSON or Markdown
     for AI agents, plus a Google Custom Search–compatible endpoint. Official SDKs:
@@ -39,6 +39,9 @@ info:
     the per-second limit; `daily_limit_reached` is the free daily limit of an
     account that never bought a pack, which resets at 00:00 UTC (the message
     names the limit and the billing page; buying any pack removes it).
+    `403 account_restricted` means the account's free use is paused because
+    another account already signed up from the same device or network; buying
+    any pack lifts it.
 
     **CORS:** `Access-Control-Allow-Origin: *` without credentials; the `X-*`
     headers above are exposed, so a browser playground can call the API with a key.
@@ -1315,8 +1318,8 @@ components:
           properties:
             code:
               type: string
-              description: "403: spend_cap_reached, key_limit_reached, forbidden. 409/422: idempotency_key_reused. 429: rate_limited, daily_limit_reached. 503: upstream_error, upstream_blocked, upstream_timeout, unavailable (the API never sends 502 or 504)"
-              examples: [unauthorized, invalid_request, insufficient_credits, rate_limited, daily_limit_reached, spend_cap_reached, key_limit_reached, idempotency_key_reused, forbidden, not_found, upstream_error, upstream_blocked, upstream_timeout, unavailable, internal]
+              description: "403: spend_cap_reached, key_limit_reached, account_restricted, forbidden. 409/422: idempotency_key_reused. 429: rate_limited, daily_limit_reached. 503: upstream_error, upstream_blocked, upstream_timeout, unavailable (the API never sends 502 or 504)"
+              examples: [unauthorized, invalid_request, insufficient_credits, rate_limited, daily_limit_reached, spend_cap_reached, key_limit_reached, account_restricted, idempotency_key_reused, forbidden, not_found, upstream_error, upstream_blocked, upstream_timeout, unavailable, internal]
             message: { type: string }
             request_id: { type: string }
 
