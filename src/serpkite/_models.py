@@ -392,7 +392,7 @@ class ChatGPTRequest(BaseModel):
     """
     country: str | None = None
     """
-    Ask as a visitor in this country (ISO 3166-1 alpha-2). Without it the visitor is usually in the US or EU
+    Ask from an exit in this country (ISO 3166-1 alpha-2, residential proxies). Without it any of our exits asks (mostly US and EU)
     """
     track: Annotated[list[TrackListItem] | None, Field(max_length=20)] = None
     """
