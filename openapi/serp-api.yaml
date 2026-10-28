@@ -80,7 +80,7 @@ security:
 paths:
   /healthz:
     get:
-      summary: Readiness (DB, Valkey)
+      summary: Service health
       security: []
       responses:
         "200": { description: OK }
@@ -1339,7 +1339,7 @@ components:
       required: [q]
       properties:
         q: { type: string, minLength: 1, maxLength: 2048 }
-        country: { type: string, default: us, description: "Country code (ISO 3166-1 alpha-2, case-insensitive; uk is accepted as gb). When omitted and location ends in a country name, that country is used. Russia (ru) is supported across all search verticals, including patents, using the shared proxy routes" }
+        country: { type: string, default: us, description: "Country code (ISO 3166-1 alpha-2, case-insensitive; uk is accepted as gb). When omitted and location ends in a country name, that country is used. Russia (ru) is supported across all search verticals, including patents" }
         language: { type: string, default: en, description: "Interface language: a language code with an optional region (e.g. en, ru, de, pt-br, zh-tw, es-419). Russian (ru) is supported across all search verticals; language does not change the selected country. On patents, a non-English code restricts publication language (ar, zh, da, nl, fi, fr, de, it, ja, ko, no, pt, ru, es, sv)" }
         location: { type: string, description: 'Free-text location, e.g. "Austin, Texas, United States"' }
         uule: { type: string, description: Pre-encoded Google location (overrides ll and location; percent-encoded values are decoded) }
@@ -1553,7 +1553,7 @@ components:
         include_html: { type: boolean, default: false }
         include_links: { type: boolean, default: false, description: "Also return the page's outbound links (`links`)" }
         include_images: { type: boolean, default: false, description: "Also return the page's image URLs (`image_links`)" }
-        country: { type: string, description: "Fetch through an exit in this country (ISO 3166-1 alpha-2) for geo-dependent pages" }
+        country: { type: string, description: "Fetch the page as seen from this country (ISO 3166-1 alpha-2) for geo-dependent pages" }
         max_age: { type: integer }
 
     ExtractRequest:
@@ -1568,7 +1568,7 @@ components:
         include_links: { type: boolean, default: false }
         include_images: { type: boolean, default: false }
         max_age: { type: integer, minimum: 0, maximum: 2592000, description: Accept a cached page up to this many seconds old (0.5 credit) }
-        country: { type: string, description: Fetch through an exit in this country (ISO 3166-1 alpha-2) }
+        country: { type: string, description: Fetch the pages as seen from this country (ISO 3166-1 alpha-2) }
         timeout: { type: integer, minimum: 1, maximum: 90, default: 50, description: "Seconds to wait for the pages; a page still loading is listed in `failed` (`upstream_timeout`, not charged). Default 75 with summary or output_schema" }
         summary: { type: boolean, default: false, description: "Add a 3-6 sentence AI summary of each page (+4 credits per page; focused on `query` when set)" }
         output_schema:
@@ -1982,8 +1982,8 @@ components:
 
     EngineParam:
       description: >-
-        Which search providers may answer. `google` (the default) is Google only; within Google, SerpKite
-        always fails over across its own proxy pools. `auto` allows falling back to other enabled providers,
+        Which search providers may answer. `google` (the default) is Google only; Google requests
+        are retried internally before failing. `auto` allows falling back to other enabled providers,
         in route order, when Google is blocked or times out. A single other provider (`brave`) or a list
         (`["google","brave"]`, or `google,brave` in a query string) restricts the request to those providers.
         `meta.engine` always names the provider that answered and credits follow that provider's price.
@@ -2010,7 +2010,7 @@ components:
 
     RouteStep:
       type: object
-      description: One provider attempt behind this answer. Proxy pools are internal and never listed.
+      description: One provider attempt behind this answer.
       required: [provider, outcome, ms]
       properties:
         provider: { type: string, examples: [google, brave] }

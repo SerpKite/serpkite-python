@@ -144,8 +144,8 @@ for r in res.results:
 
 ## Search engines & fallback
 
-By default every request is answered by Google only (`engine="google"`); SerpKite already fails
-over across its own proxy pools. Opt in to other providers with `engine`:
+By default every request is answered by Google only (`engine="google"`); SerpKite already
+retries Google internally. Opt in to other providers with `engine`:
 
 ```python
 # Fall back to other enabled providers when Google is blocked or times out
