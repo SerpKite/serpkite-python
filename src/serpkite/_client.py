@@ -978,7 +978,7 @@ class SerpKite:
         fields: Optional[str] = None,
         **params: Unpack[ChatGPTParams],
     ) -> Union[AssistantResponse, str, dict[str, Any]]:
-        """Ask ChatGPT as a logged-out user (5 credits): the answer (``text``, ``markdown`` with
+        """Ask ChatGPT as a logged-out user (4 credits): the answer (``text``, ``markdown`` with
         ``[n](link)`` citations), cited ``sources``, ``search_queries``, ``products``, ``places``
         and the guest ``model``.
 
@@ -1033,7 +1033,7 @@ class SerpKite:
         fields: Optional[str] = None,
         **params: Unpack[AssistantParams],
     ) -> Union[AssistantResponse, str, dict[str, Any]]:
-        """Ask Google Gemini as a logged-out user (5 credits): the answer with the sources it
+        """Ask Google Gemini as a logged-out user (3 credits): the answer with the sources it
         grounded on. Grounded answers take 40-90 s. See :meth:`chatgpt` for the response,
         ``track``, timeouts, retries and ``format``."""
         return self._assistant("/v1/gemini", prompt, params, format, fields)
@@ -1131,7 +1131,7 @@ class SerpKite:
         fields: Optional[str] = None,
         **params: Unpack[AssistantParams],
     ) -> Union[AssistantResponse, str, dict[str, Any]]:
-        """Google AI Mode (3 credits): the answer, cited sources and products. ``country`` is the
+        """Google AI Mode (2 credits): the answer, cited sources and products. ``country`` is the
         country Google answers for. 10-45 s. See :meth:`chatgpt` for the response, ``track``,
         timeouts, retries and ``format``."""
         return self._assistant("/v1/ai_mode", prompt, params, format, fields)

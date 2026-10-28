@@ -305,7 +305,7 @@ if serp.ai_overview:
     print(serp.ai_overview.text, serp.ai_overview.sources)
 ```
 
-- Prices per answer: ChatGPT 5, Gemini 5, Copilot 3, AI Mode 3, Brave AI 2 credits (the same in
+- Prices per answer: ChatGPT 4, Gemini 3, Copilot 3, AI Mode 2, Brave AI 2 credits (the same in
   batches; `max_age` cache hits half). Failed, refused and empty answers are free.
 - Answers take 10-90 s: each attempt waits at least 120 s (raised from the client `timeout`) and
   is retried only on 429 (a lost response is still billed).
@@ -493,7 +493,7 @@ agent = Agent(role="Brand analyst", goal="See what AI assistants recommend", bac
 
 `assistant` is `chatgpt` (default), `gemini`, `copilot`, `ai_mode` or `brave_ai`; the agent sets
 only `prompt`. `language` isn't taken by ChatGPT, and `web_search` is ChatGPT only. Answers take
-10-90 s and cost 2-5 credits (see [AI assistants](#ai-assistants)).
+10-90 s and cost 2-4 credits (see [AI assistants](#ai-assistants)).
 
 ## LangChain
 

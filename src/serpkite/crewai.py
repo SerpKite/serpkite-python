@@ -179,8 +179,8 @@ class SerpKiteAssistantTool(BaseTool):  # type: ignore[misc]
     """What ChatGPT, Gemini, Copilot, Google AI Mode or Brave AI answers, via SerpKite.
 
     Returns the answer as Markdown with ``[n](link)`` citations, its sources and products and,
-    with ``track``, how each brand or domain was mentioned. Prices per answer: ChatGPT 5,
-    Gemini 5, Copilot 3, AI Mode 3, Brave AI 2 credits; failed and empty answers are free."""
+    with ``track``, how each brand or domain was mentioned. Prices per answer: ChatGPT 4,
+    Gemini 3, Copilot 3, AI Mode 2, Brave AI 2 credits; failed and empty answers are free."""
 
     name: str = "SerpKite ChatGPT"
     description: str = _ASSISTANTS["chatgpt"][1]

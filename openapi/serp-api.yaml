@@ -68,8 +68,8 @@ info:
     as a logged-out user; the response is its answer
     (`text`, `markdown`) with the `sources` it cited or listed,
     `search_queries`, `products` and `places` where the assistant shows them,
-    and `mentions` for the brands and domains in `track`. ChatGPT 5, Gemini 5,
-    Copilot 3, AI Mode 3, Brave AI 2 credits per answer, the same in batches;
+    and `mentions` for the brands and domains in `track`. ChatGPT 4, Gemini 3,
+    Copilot 3, AI Mode 2, Brave AI 2 credits per answer, the same in batches;
     a cache hit (`max_age`) ×0.5; failed, refused and empty answers are free.
     Answers take 10–90 s: run many through `POST /v1/batches` or a monitor.
 servers:
@@ -342,7 +342,7 @@ paths:
         "503": { $ref: "#/components/responses/Unavailable" }
   /v1/chatgpt:
     post:
-      summary: Ask ChatGPT as a logged-out user and get its answer, cited sources, products and places (5 credits)
+      summary: Ask ChatGPT as a logged-out user and get its answer, cited sources, products and places (4 credits)
       operationId: chatgpt
       description: |
         Opens chatgpt.com as a logged-out visitor in a standard browser, sends
@@ -367,7 +367,7 @@ paths:
         "503": { $ref: "#/components/responses/Unavailable" }
   /v1/gemini:
     post:
-      summary: Ask Google Gemini as a logged-out user and get its answer with the sources it grounded on (5 credits)
+      summary: Ask Google Gemini as a logged-out user and get its answer with the sources it grounded on (3 credits)
       operationId: gemini
       description: |
         Opens gemini.google.com as a logged-out visitor and sends `prompt`. Most
@@ -397,7 +397,7 @@ paths:
       responses: *assistantResponses
   /v1/ai_mode:
     post:
-      summary: Ask Google AI Mode and get its answer, cited sources and products (3 credits)
+      summary: Ask Google AI Mode and get its answer, cited sources and products (2 credits)
       operationId: aiMode
       description: |
         Google's AI Mode (`udm=50`) for `prompt`, logged out. `country` is the
