@@ -39,9 +39,10 @@ info:
     the per-second limit; `daily_limit_reached` is the free daily limit of an
     account that never bought a pack, which resets at 00:00 UTC (the message
     names the limit and the billing page; buying any pack removes it).
-    `403 account_restricted` means the account's free use is paused because
-    another account already signed up from the same device or network; buying
-    any pack lifts it.
+    `403 account_restricted` means the account's free use is paused because it
+    appears to be one of several accounts run by the same person (same device
+    or network, or requests in step with other accounts) or uses a disposable
+    email address; buying any pack lifts it.
 
     **CORS:** `Access-Control-Allow-Origin: *` without credentials; the `X-*`
     headers above are exposed, so a browser playground can call the API with a key.
