@@ -2055,6 +2055,10 @@ class SearchRequest(BaseModel):
     """
     Only results published on or before this date, YYYY-MM-DD. Can't be combined with time or tbs
     """
+    include_images: bool | None = False
+    """
+    Shopping only: `image_url` is a `data:` thumbnail (5-20 KB) on the cards where Google inlines one instead of an image URL, usually the first of a page. Off by default, because it adds up to a few hundred KB to a response
+    """
     highlights: bool | None = False
     """
     Return up to 3 query-ranked passages (`highlights`) of each page read by include_content instead of the whole page (search only; needs include_content; no extra credits)

@@ -377,6 +377,8 @@ class SearchParams(TypedDict, total=False):
     engine: Optional[Engine]
     """Search providers allowed to answer: ``"google"`` (default), ``"auto"``, one provider or a list.
     ``meta.engine`` names the provider that answered; credits follow its price."""
+    include_images: Optional[bool]
+    """Shopping only: ``data:`` thumbnails in ``image_url`` on cards with no image URL."""
     include_domains: Optional[DomainList]
     """Only results from these domains (search, news, images, videos): ``example.com``,
     ``github.com/org`` (path prefix) or ``.gov`` (TLD). At most 20."""

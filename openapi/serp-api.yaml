@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SerpKite SERP API
-  version: 1.12.4
+  version: 1.12.5
   description: |
     Public search API (api.serpkite.com). Google results as clean JSON or Markdown
     for AI agents, plus a Google Custom Search–compatible endpoint. Official SDKs:
@@ -1377,6 +1377,7 @@ components:
           description: Move results from these domains to the top, keeping the order within both groups (search, news)
         start_date: { type: string, format: date, description: "Only results published on or after this date, YYYY-MM-DD (search, news, images, videos). Can't be combined with time or tbs. A fallback engine without date ranges is skipped" }
         end_date: { type: string, format: date, description: "Only results published on or before this date, YYYY-MM-DD. Can't be combined with time or tbs" }
+        include_images: { type: boolean, default: false, description: "Shopping only: `image_url` is a `data:` thumbnail (5-20 KB) on the cards where Google inlines one instead of an image URL, usually the first of a page. Off by default, because it adds up to a few hundred KB to a response" }
         highlights: { type: boolean, default: false, description: "Return up to 3 query-ranked passages (`highlights`) of each page read by include_content instead of the whole page (search only; needs include_content; no extra credits)" }
         include_answer: { type: boolean, default: false, description: "Add a cited AI `answer` written by Claude over this response's results (search and news; +2 credits, +4 when it read pages via `include_content`; refunded with a `meta.warnings` entry when the model fails)" }
 
