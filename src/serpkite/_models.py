@@ -602,7 +602,7 @@ class Error1(BaseModel):
         ),
     ]
     """
-    403: spend_cap_reached, key_limit_reached, account_restricted, forbidden. 409/422: idempotency_key_reused. 429: rate_limited, daily_limit_reached. 503: upstream_error, upstream_blocked, upstream_timeout, unavailable (the API never sends 502 or 504)
+    403: spend_cap_reached, key_limit_reached, account_restricted, forbidden. 409/422: idempotency_key_reused. 422: target_unavailable (the URL you asked for failed: its site answered 404, its domain doesn't resolve; resending won't help), no_pages. 429: rate_limited, daily_limit_reached. 503: upstream_error, upstream_blocked, upstream_timeout, unavailable (the API never sends 502 or 504)
     """
     message: str
     request_id: str | None = None
@@ -1883,7 +1883,7 @@ class ReviewsRequest(BaseModel):
     """
     page_token: str | None = None
     """
-    `next_page_token` from the previous page, unchanged. Opaque and bound to the place and `sort` it was issued for (anything else is a 400). Paging reaches the first 10 reviews of a place, all Google Maps shows a logged-out visitor.
+    `next_page_token` from the previous page, unchanged. Opaque and bound to the place and `sort` it was issued for (anything else is a 400). Paging reaches the first 10 reviews of a place at most, and usually the first 5, all Google Maps shows a logged-out visitor.
     """
     num: Annotated[int | None, Field(le=50)] = 10
     """
@@ -1988,7 +1988,7 @@ class SearchRequest(BaseModel):
     """
     location: str | None = None
     """
-    Free-text location, e.g. "Austin, Texas, United States"
+    Free-text location, e.g. "Austin, Texas, United States". Google and Yandex Maps apply it; other engines have no such parameter and are skipped (a 400 when you named one), never answered for the wrong place. uule works the same way
     """
     uule: str | None = None
     """
@@ -2000,7 +2000,7 @@ class SearchRequest(BaseModel):
     """
     num: Annotated[int | None, Field(ge=1, le=100)] = 10
     """
-    1–100. Up to 10 returns one page (10 results, 1 credit; trim it yourself for fewer). Above 10 on search and news is the depth bundle (7 credits for 100; values between round up to whole pages). On images a page is a block of up to 100 images (1 credit) and num (default 100) is how many of them to return; `page` moves to the next block. Other verticals return one page of 10
+    1–100. Up to 10 returns one page (10 results, 1 credit; trim it yourself for fewer). Above 10 on search and news is the depth bundle (7 credits for 100; values between round up to whole pages). On images a page is a block of up to 100 images (1 credit) and num (default 100) is how many of them to return; `page` moves to the next block. Other verticals return one page as the engine serves it: up to 10 on Google (shopping cards come 40-55 to a page, and Brave and DuckDuckGo news and videos up to about 60), for 1 credit. Trim it yourself
     """
     page: Annotated[int | None, Field(ge=1, le=10)] = 1
     time: str | None = None
@@ -2103,6 +2103,9 @@ class ShoppingResult(BaseModel):
     title: str
     source: str | None = None
     link: str | None = None
+    """
+    The merchant page when Google's card links to it; most cards don't, and then this is Google's product viewer or shopping page for the item
+    """
     price: str | None = None
     price_value: float | None = None
     currency: str | None = None

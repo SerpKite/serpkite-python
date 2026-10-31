@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SerpKite SERP API
-  version: 1.12.2
+  version: 1.12.4
   description: |
     Public search API (api.serpkite.com). Google results as clean JSON or Markdown
     for AI agents, plus a Google Custom Search–compatible endpoint. Official SDKs:
@@ -339,6 +339,7 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "402": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Unavailable" }
   /v1/chatgpt:
@@ -416,7 +417,9 @@ paths:
       operationId: braveAi
       description: |
         Brave Search's AI answer ("Ask Brave") for `prompt`, logged out. `country`
-        sets Brave's market (prices and shops follow it). About 10 s.
+        sets Brave's market (prices and shops follow it). About 10 s. Brave doesn't
+        answer every query: then `text` is empty, `meta.parse_quality` is `empty` and
+        the request costs nothing.
       requestBody:
         required: true
         content:
@@ -856,6 +859,11 @@ paths:
     post:
       summary: Position of a domain for a keyword in the top N (default 100; priced like /v1/search depth, 7 credits for 100)
       operationId: rank
+      description: |
+        Reads the same results as `/v1/search` with that `num`. Google serves several variants of
+        one results page, so a position can differ between calls, and a domain can be absent from
+        one variant: `position: null` means absent from this page, not from Google. Average several
+        checks to track a rank.
       requestBody:
         required: true
         content:
@@ -1276,7 +1284,7 @@ components:
                 markdown: "# Pricing\n\n…"
                 highlights: [{ text: "Enterprise: $499 per month …", score: 4.83, heading: "Plans" }]
             failed:
-              - { url: "https://example.com/missing", error: { code: upstream_error, message: "could not fetch the page: the site answered 404; you were not charged" } }
+              - { url: "https://example.com/missing", error: { code: target_unavailable, message: "could not fetch the page: the site answered 404; you were not charged" } }
             meta: { request_id: req_01J9, credits_used: 1, latency_ms: 2210, succeeded: 1, failed: 1 }
     MapOK:
       description: OK
@@ -1318,7 +1326,7 @@ components:
           properties:
             code:
               type: string
-              description: "403: spend_cap_reached, key_limit_reached, account_restricted, forbidden. 409/422: idempotency_key_reused. 429: rate_limited, daily_limit_reached. 503: upstream_error, upstream_blocked, upstream_timeout, unavailable (the API never sends 502 or 504)"
+              description: "403: spend_cap_reached, key_limit_reached, account_restricted, forbidden. 409/422: idempotency_key_reused. 422: target_unavailable (the URL you asked for failed: its site answered 404, its domain doesn't resolve; resending won't help), no_pages. 429: rate_limited, daily_limit_reached. 503: upstream_error, upstream_blocked, upstream_timeout, unavailable (the API never sends 502 or 504)"
               examples: [unauthorized, invalid_request, insufficient_credits, rate_limited, daily_limit_reached, spend_cap_reached, key_limit_reached, account_restricted, idempotency_key_reused, forbidden, not_found, upstream_error, upstream_blocked, upstream_timeout, unavailable, internal]
             message: { type: string }
             request_id: { type: string }
@@ -1342,10 +1350,10 @@ components:
         q: { type: string, minLength: 1, maxLength: 2048 }
         country: { type: string, default: us, description: "Country code (ISO 3166-1 alpha-2, case-insensitive; uk is accepted as gb). When omitted and location ends in a country name, that country is used. Russia (ru) is supported across all search verticals, including patents" }
         language: { type: string, default: en, description: "Interface language: a language code with an optional region (e.g. en, ru, de, pt-br, zh-tw, es-419). Russian (ru) is supported across all search verticals; language does not change the selected country. On patents, a non-English code restricts publication language (ar, zh, da, nl, fi, fr, de, it, ja, ko, no, pt, ru, es, sv)" }
-        location: { type: string, description: 'Free-text location, e.g. "Austin, Texas, United States"' }
+        location: { type: string, description: 'Free-text location, e.g. "Austin, Texas, United States". Google and Yandex Maps apply it; other engines have no such parameter and are skipped (a 400 when you named one), never answered for the wrong place. uule works the same way' }
         uule: { type: string, description: Pre-encoded Google location (overrides ll and location; percent-encoded values are decoded) }
         ll: { type: string, description: 'Map point "@lat,lng,14z" (maps and places only; zoom optional, default 14z): the map is searched around that point at that zoom, wherever the request comes from. Overrides location' }
-        num: { type: integer, default: 10, minimum: 1, maximum: 100, description: "1–100. Up to 10 returns one page (10 results, 1 credit; trim it yourself for fewer). Above 10 on search and news is the depth bundle (7 credits for 100; values between round up to whole pages). On images a page is a block of up to 100 images (1 credit) and num (default 100) is how many of them to return; `page` moves to the next block. Other verticals return one page of 10" }
+        num: { type: integer, default: 10, minimum: 1, maximum: 100, description: "1–100. Up to 10 returns one page (10 results, 1 credit; trim it yourself for fewer). Above 10 on search and news is the depth bundle (7 credits for 100; values between round up to whole pages). On images a page is a block of up to 100 images (1 credit) and num (default 100) is how many of them to return; `page` moves to the next block. Other verticals return one page as the engine serves it: up to 10 on Google (shopping cards come 40-55 to a page, and Brave and DuckDuckGo news and videos up to about 60), for 1 credit. Trim it yourself" }
         page: { type: integer, default: 1, minimum: 1, maximum: 10 }
         time: { type: string, enum: [hour, day, week, month, year], description: "Only results from the last hour/day/… (search, news, images, videos, shopping). A fallback engine without that window is skipped, never answered unfiltered" }
         tbs: { type: string, description: "Advanced: raw Google tbs filter (e.g. qdr:d, qdr:w2, cdr:1,cd_min:1/1/2026,cd_max:1/31/2026); overrides time" }
@@ -1413,8 +1421,8 @@ components:
           type: string
           description: >-
             `next_page_token` from the previous page, unchanged. Opaque and bound to the place and `sort`
-            it was issued for (anything else is a 400). Paging reaches the first 10 reviews of a place, all
-            Google Maps shows a logged-out visitor.
+            it was issued for (anything else is a 400). Paging reaches the first 10 reviews of a place at
+            most, and usually the first 5, all Google Maps shows a logged-out visitor.
         num: { type: integer, default: 10, maximum: 50, description: "Reviews per page; a page holds at most 10 (the first 10 reviews of a place). A page can be shorter when Google stops loading early; `next_page_token` then resumes after it" }
         format: { type: string, enum: [json, markdown, compact] }
         fields: { type: string }
@@ -2372,7 +2380,7 @@ components:
         position: { type: integer }
         title: { type: string }
         source: { type: string }
-        link: { type: string }
+        link: { type: string, description: "The merchant page when Google's card links to it; most cards don't, and then this is Google's product viewer or shopping page for the item" }
         price: { type: string }
         price_value: { type: number }
         currency: { type: string }
