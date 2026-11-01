@@ -963,6 +963,13 @@ class Meta(BaseModel):
     cached_at: AwareDatetime | None = None
     resolved_urls: bool | None = None
     parse_quality: str | None = None
+    """
+    `partial` means some results were dropped or, on a `num` above 10, that pages are listed in `missing_pages`.
+    """
+    missing_pages: list[int] | None = None
+    """
+    Pages of a `num` above 10 that could not be retrieved, for example because Google refused them. Absent when every page was retrieved or Google ended the results, so a short result without this field is all Google returned. The pages are not billed, and positions after a missing middle page are shifted.
+    """
     latency_ms: int | None = None
     llm: LLMUsage | None = None
     warnings: list[str] | None = None

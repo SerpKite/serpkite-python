@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SerpKite SERP API
-  version: 1.12.5
+  version: 1.12.6
   description: |
     Public search API (api.serpkite.com). Google results as clean JSON or Markdown
     for AI agents, plus a Google Custom Search–compatible endpoint. Official SDKs:
@@ -2043,7 +2043,20 @@ components:
         cached: { type: boolean }
         cached_at: { type: string, format: date-time }
         resolved_urls: { type: boolean }
-        parse_quality: { type: string, enum: [ok, partial, empty] }
+        parse_quality:
+          type: string
+          enum: [ok, partial, empty]
+          description: >-
+            `partial` means some results were dropped or, on a `num` above 10, that pages are
+            listed in `missing_pages`.
+        missing_pages:
+          type: array
+          items: { type: integer }
+          description: >-
+            Pages of a `num` above 10 that could not be retrieved, for example because Google
+            refused them. Absent when every page was retrieved or Google ended the results, so a
+            short result without this field is all Google returned. The pages are not billed, and
+            positions after a missing middle page are shifted.
         latency_ms: { type: integer }
         llm: { $ref: "#/components/schemas/LLMUsage" }
         warnings:
