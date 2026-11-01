@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SerpKite SERP API
-  version: 1.12.6
+  version: 1.12.7
   description: |
     Public search API (api.serpkite.com). Google results as clean JSON or Markdown
     for AI agents, plus a Google Custom Search–compatible endpoint. Official SDKs:
@@ -2057,6 +2057,13 @@ components:
             refused them. Absent when every page was retrieved or Google ended the results, so a
             short result without this field is all Google returned. The pages are not billed, and
             positions after a missing middle page are shifted.
+        similar_results_hidden:
+          type: boolean
+          description: >-
+            Present and `true` when Google said it hid results very similar to those shown and
+            ended the results early. Nothing was lost in collection, but Google's answer for this
+            query can differ between requests, so a later request may return more. Such a result
+            is not cached.
         latency_ms: { type: integer }
         llm: { $ref: "#/components/schemas/LLMUsage" }
         warnings:
