@@ -76,6 +76,7 @@ Every query vertical takes `q` plus optional keyword parameters: `country`, `lan
 | `sk.autocomplete(q, **params)` | `/v1/autocomplete` | `AutocompleteResponse` |
 | `sk.webpage(url, include_html=False)` | `/v1/webpage` | `WebpageResponse` (`markdown`, `text`, `metadata`) |
 | `sk.rank(q, domain, num=100)` | `/v1/rank` | `RankResponse` (`position` or `None`, `matches`) |
+| `sk.resolve(links)` | `/v1/resolve` | `ResolveResponse` (`results[].status`/`destination` for links returned with `link_resolved=False`, `retry_after`; free) |
 | `sk.answer(q, depth=, num_sources=, output_schema=, **params)` | `/v1/answer` | `AnswerResponse` (`answer`, `citations`, `results`, `output`) |
 | `sk.answer_stream(q, depth=, num_sources=, **params)` | `/v1/answer` (SSE) | iterator of `AnswerStreamResults`, `AnswerStreamDelta`…, `AnswerStreamDone` |
 | `sk.chatgpt(prompt, web_search=, country=, track=, …)` | `/v1/chatgpt` | `AssistantResponse` |

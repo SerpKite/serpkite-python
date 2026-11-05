@@ -976,7 +976,7 @@ class Meta(BaseModel):
     """
     unresolved_links: Annotated[int | None, Field(ge=1)] = None
     """
-    How many results carry `link_resolved: false` (their `link` is still a Google /goto redirect). Absent when every link is a destination. Such a response is not cached, so a later request may get every destination.
+    How many results carry `link_resolved: false` (their `link` is still a Google /goto redirect). Absent when every link is a destination. SerpKite keeps following them after Google's delay: `POST /v1/resolve` returns their destinations, and the response is cached only once all of them resolve. Batch jobs and monitor runs wait for them (up to 2 minutes), so they rarely carry any.
     """
     latency_ms: int | None = None
     llm: LLMUsage | None = None
@@ -1016,6 +1016,17 @@ class Meta2(BaseModel):
     credits_used: float
     latency_ms: int | None = None
     count: int
+
+
+class Meta3(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    request_id: str
+    credits_used: float
+    """
+    Always 0
+    """
 
 
 class Monitor(BaseModel):
@@ -1378,7 +1389,7 @@ class NewsResult(BaseModel):
     image_url: str | None = None
     link_resolved: bool | None = None
     """
-    Present and `false` only when `link` is still Google's `https://www.google.com/goto?url=…` redirect, because Google did not release the destination in time. The result keeps its position; `domain` is then the host Google displayed for it (empty when it displayed none). Absent when `link` is the destination.
+    Present and `false` only when `link` is still Google's `https://www.google.com/goto?url=…` redirect, because Google did not release the destination in time. The result keeps its position; `domain` is then the host Google displayed for it (empty when it displayed none). `POST /v1/resolve` returns the destination once Google releases it. Absent when `link` is the destination.
     """
 
 
@@ -1398,7 +1409,7 @@ class OrganicResult(BaseModel):
     """
     link_resolved: bool | None = None
     """
-    Present and `false` only when `link` is still Google's `https://www.google.com/goto?url=…` redirect, because Google did not release the destination in time. The result keeps its position; `domain` is then the host Google displayed for it (empty when it displayed none). Absent when `link` is the destination.
+    Present and `false` only when `link` is still Google's `https://www.google.com/goto?url=…` redirect, because Google did not release the destination in time. The result keeps its position; `domain` is then the host Google displayed for it (empty when it displayed none). `POST /v1/resolve` returns the destination once Google releases it. Absent when `link` is the destination.
     """
     displayed_link: str | None = None
     snippet: str | None = None
@@ -1866,6 +1877,50 @@ class ResearchTask(BaseModel):
     error: TaskError | None = None
 
 
+class ResolveRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    links: Annotated[list[str], Field(max_length=100, min_length=1)]
+    """
+    `link` values of results with `link_resolved: false`, as returned
+    """
+
+
+class ResolveResponse(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    results: list[ResolvedLink]
+    retry_after: int | None = None
+    """
+    Seconds to wait before asking again for the `pending` links (absent when none is pending)
+    """
+    meta: Meta3
+
+
+class ResolvedLink(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    link: str
+    """
+    The link as sent
+    """
+    status: str
+    """
+    `resolved`: `destination` is where it leads. `pending`: still waiting for Google; ask again after `retry_after`. `failed`: Google never released it. `unknown`: not a link SerpKite returned in the last 24 hours.
+    """
+    destination: str | None = None
+    """
+    The destination URL (`resolved` only)
+    """
+    domain: str | None = None
+    """
+    Canonical host of `destination` without www. (`resolved` only)
+    """
+
+
 class Response(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -2320,7 +2375,7 @@ class VideoResult(BaseModel):
     """
     link_resolved: bool | None = None
     """
-    Present and `false` only when `link` is still Google's `https://www.google.com/goto?url=…` redirect, because Google did not release the destination in time. The result keeps its position; `domain` is then the host Google displayed for it (empty when it displayed none). Absent when `link` is the destination.
+    Present and `false` only when `link` is still Google's `https://www.google.com/goto?url=…` redirect, because Google did not release the destination in time. The result keeps its position; `domain` is then the host Google displayed for it (empty when it displayed none). `POST /v1/resolve` returns the destination once Google releases it. Absent when `link` is the destination.
     """
 
 

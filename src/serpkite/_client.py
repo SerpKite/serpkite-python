@@ -73,6 +73,7 @@ from .types import (
     RankResponse,
     ResearchEffort,
     ResearchTask,
+    ResolveResponse,
     ReviewsParams,
     ReviewsResponse,
     ScholarResponse,
@@ -1452,6 +1453,14 @@ class SerpKite:
         body = clean({"q": q, "domain": domain, **params})
         return RankResponse.model_validate(self._json("POST", "/v1/rank", body))
 
+    def resolve(self, links: Sequence[str]) -> ResolveResponse:
+        """Destinations of results returned with ``link_resolved=False``.
+
+        Pass their ``link`` values (Google's /goto redirects, up to 100). A ``pending``
+        link has ``res.retry_after`` seconds to wait. Free.
+        """
+        return ResolveResponse.model_validate(self._json("POST", "/v1/resolve", {"links": list(links)}))
+
     def account(self) -> Account:
         """Balance, limits and this month's usage for the calling key's account."""
         return Account.model_validate(self._json("GET", "/v1/account", None))
@@ -2652,6 +2661,14 @@ class AsyncSerpKite:
         """
         body = clean({"q": q, "domain": domain, **params})
         return RankResponse.model_validate(await self._json("POST", "/v1/rank", body))
+
+    async def resolve(self, links: Sequence[str]) -> ResolveResponse:
+        """Destinations of results returned with ``link_resolved=False``.
+
+        Pass their ``link`` values (Google's /goto redirects, up to 100). A ``pending``
+        link has ``res.retry_after`` seconds to wait. Free.
+        """
+        return ResolveResponse.model_validate(await self._json("POST", "/v1/resolve", {"links": list(links)}))
 
     async def account(self) -> Account:
         """Balance, limits and this month's usage for the calling key's account."""
