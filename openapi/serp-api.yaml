@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SerpKite SERP API
-  version: 1.12.10
+  version: 1.13.0
   description: |
     Public search API (api.serpkite.com). Google results as clean JSON or Markdown
     for AI agents, plus a Google Custom Search–compatible endpoint. Official SDKs:
@@ -2048,7 +2048,8 @@ components:
           enum: [ok, partial, empty]
           description: >-
             `partial` means some results were dropped or, on a `num` above 10, that pages are
-            listed in `missing_pages`.
+            listed in `missing_pages`. A result whose link Google did not release in time is kept
+            (see `unresolved_links`) and does not make the response `partial`.
         missing_pages:
           type: array
           items: { type: integer }
@@ -2064,6 +2065,13 @@ components:
             ended the results early. Nothing was lost in collection, but Google's answer for this
             query can differ between requests, so a later request may return more. Such a result
             is not cached.
+        unresolved_links:
+          type: integer
+          minimum: 1
+          description: >-
+            How many results carry `link_resolved: false` (their `link` is still a Google /goto
+            redirect). Absent when every link is a destination. Such a response is not cached, so
+            a later request may get every destination.
         latency_ms: { type: integer }
         llm: { $ref: "#/components/schemas/LLMUsage" }
         warnings:
@@ -2152,8 +2160,15 @@ components:
       properties:
         position: { type: integer }
         title: { type: string }
-        link: { type: string, description: Resolved destination URL (never a google.com/url or /goto redirect) }
+        link: { type: string, description: "Resolved destination URL, never a google.com/url redirect. Google's /goto redirect only with `link_resolved: false`" }
         domain: { type: string, description: Canonical host without www. }
+        link_resolved:
+          type: boolean
+          description: >-
+            Present and `false` only when `link` is still Google's `https://www.google.com/goto?url=…`
+            redirect, because Google did not release the destination in time. The result keeps its
+            position; `domain` is then the host Google displayed for it (empty when it displayed
+            none). Absent when `link` is the destination.
         displayed_link: { type: string }
         snippet: { type: string }
         date: { type: string }
@@ -2262,6 +2277,13 @@ components:
         channel: { type: string }
         date: { type: string }
         published_at: { type: string, description: "`date` as ISO 8601 when it parses" }
+        link_resolved:
+          type: boolean
+          description: >-
+            Present and `false` only when `link` is still Google's `https://www.google.com/goto?url=…`
+            redirect, because Google did not release the destination in time. The result keeps its
+            position; `domain` is then the host Google displayed for it (empty when it displayed
+            none). Absent when `link` is the destination.
     VideosResponse:
       type: object
       required: [request, results, meta]
@@ -2283,6 +2305,13 @@ components:
         published_at: { type: string, description: "`date` as ISO 8601 when it parses" }
         source: { type: string }
         image_url: { type: string }
+        link_resolved:
+          type: boolean
+          description: >-
+            Present and `false` only when `link` is still Google's `https://www.google.com/goto?url=…`
+            redirect, because Google did not release the destination in time. The result keeps its
+            position; `domain` is then the host Google displayed for it (empty when it displayed
+            none). Absent when `link` is the destination.
     NewsResponse:
       type: object
       required: [request, results, meta]

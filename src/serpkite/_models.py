@@ -964,7 +964,7 @@ class Meta(BaseModel):
     resolved_urls: bool | None = None
     parse_quality: str | None = None
     """
-    `partial` means some results were dropped or, on a `num` above 10, that pages are listed in `missing_pages`.
+    `partial` means some results were dropped or, on a `num` above 10, that pages are listed in `missing_pages`. A result whose link Google did not release in time is kept (see `unresolved_links`) and does not make the response `partial`.
     """
     missing_pages: list[int] | None = None
     """
@@ -973,6 +973,10 @@ class Meta(BaseModel):
     similar_results_hidden: bool | None = None
     """
     Present and `true` when Google said it hid results very similar to those shown and ended the results early. Nothing was lost in collection, but Google's answer for this query can differ between requests, so a later request may return more. Such a result is not cached.
+    """
+    unresolved_links: Annotated[int | None, Field(ge=1)] = None
+    """
+    How many results carry `link_resolved: false` (their `link` is still a Google /goto redirect). Absent when every link is a destination. Such a response is not cached, so a later request may get every destination.
     """
     latency_ms: int | None = None
     llm: LLMUsage | None = None
@@ -1372,6 +1376,10 @@ class NewsResult(BaseModel):
     """
     source: str | None = None
     image_url: str | None = None
+    link_resolved: bool | None = None
+    """
+    Present and `false` only when `link` is still Google's `https://www.google.com/goto?url=…` redirect, because Google did not release the destination in time. The result keeps its position; `domain` is then the host Google displayed for it (empty when it displayed none). Absent when `link` is the destination.
+    """
 
 
 class OrganicResult(BaseModel):
@@ -1382,11 +1390,15 @@ class OrganicResult(BaseModel):
     title: str
     link: str
     """
-    Resolved destination URL (never a google.com/url or /goto redirect)
+    Resolved destination URL, never a google.com/url redirect. Google's /goto redirect only with `link_resolved: false`
     """
     domain: str
     """
     Canonical host without www.
+    """
+    link_resolved: bool | None = None
+    """
+    Present and `false` only when `link` is still Google's `https://www.google.com/goto?url=…` redirect, because Google did not release the destination in time. The result keeps its position; `domain` is then the host Google displayed for it (empty when it displayed none). Absent when `link` is the destination.
     """
     displayed_link: str | None = None
     snippet: str | None = None
@@ -2305,6 +2317,10 @@ class VideoResult(BaseModel):
     published_at: str | None = None
     """
     `date` as ISO 8601 when it parses
+    """
+    link_resolved: bool | None = None
+    """
+    Present and `false` only when `link` is still Google's `https://www.google.com/goto?url=…` redirect, because Google did not release the destination in time. The result keeps its position; `domain` is then the host Google displayed for it (empty when it displayed none). Absent when `link` is the destination.
     """
 
 
