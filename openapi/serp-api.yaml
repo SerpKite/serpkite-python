@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SerpKite SERP API
-  version: 1.14.1
+  version: 1.14.2
   description: |
     Public search API (api.serpkite.com). Google results as clean JSON or Markdown
     for AI agents, plus a Google Custom Search–compatible endpoint. Official SDKs:
@@ -1381,7 +1381,7 @@ components:
         q: { type: string, minLength: 1, maxLength: 2048 }
         country: { type: string, default: us, description: "Country code (ISO 3166-1 alpha-2, case-insensitive; uk is accepted as gb). When omitted and location ends in a country name, that country is used. Russia (ru) is supported across all search verticals, including patents" }
         language: { type: string, default: en, description: "Interface language: a language code with an optional region (e.g. en, ru, de, pt-br, zh-tw, es-419). Russian (ru) is supported across all search verticals; language does not change the selected country. On patents, a non-English code restricts publication language (ar, zh, da, nl, fi, fr, de, it, ja, ko, no, pt, ru, es, sv)" }
-        location: { type: string, description: 'Free-text location, e.g. "Austin, Texas, United States". Google and Yandex Maps apply it; other engines have no such parameter and are skipped (a 400 when you named one), never answered for the wrong place. uule works the same way' }
+        location: { type: string, description: 'Free-text location, e.g. "Austin, Texas, United States". Google, Brave (search, news, images, videos), Yandex web search and Yandex Maps apply it; Bing, DuckDuckGo, Yahoo, Mojeek and Wikipedia have no such setting and are skipped (a 400 when you named one), never answered for the wrong place, as is a place an engine can''t find. uule works the same way' }
         uule: { type: string, description: Pre-encoded Google location (overrides ll and location; percent-encoded values are decoded) }
         ll: { type: string, description: 'Map point "@lat,lng,14z" (maps and places only; zoom optional, default 14z): the map is searched around that point at that zoom, wherever the request comes from. Overrides location' }
         num: { type: integer, default: 10, minimum: 1, maximum: 100, description: "1–100. Up to 10 returns one page (10 results, 1 credit; trim it yourself for fewer). Above 10 on search and news is the depth bundle (7 credits for 100; values between round up to whole pages). On images a page is a block of up to 100 images (1 credit) and num (default 100) is how many of them to return; `page` moves to the next block. Other verticals return one page as the engine serves it: up to 10 on Google (shopping cards come 40-55 to a page, and Brave and DuckDuckGo news and videos up to about 60), for 1 credit. Trim it yourself" }

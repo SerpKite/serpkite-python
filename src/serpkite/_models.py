@@ -2066,7 +2066,7 @@ class SearchRequest(BaseModel):
     """
     location: str | None = None
     """
-    Free-text location, e.g. "Austin, Texas, United States". Google and Yandex Maps apply it; other engines have no such parameter and are skipped (a 400 when you named one), never answered for the wrong place. uule works the same way
+    Free-text location, e.g. "Austin, Texas, United States". Google, Brave (search, news, images, videos), Yandex web search and Yandex Maps apply it; Bing, DuckDuckGo, Yahoo, Mojeek and Wikipedia have no such setting and are skipped (a 400 when you named one), never answered for the wrong place, as is a place an engine can't find. uule works the same way
     """
     uule: str | None = None
     """
