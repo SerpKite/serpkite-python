@@ -270,7 +270,7 @@ class AssistantRequest(BaseModel):
     """
     location: Annotated[str | None, Field(max_length=256)] = None
     """
-    ai_mode and brave_ai only (400 on gemini and copilot): the place the answer is for, e.g. "Austin, Texas, United States", so local prompts ("best pizza near me") answer for it. country defaults to its country. A place the assistant can't find is a 400 (free), never answered for another place
+    ai_mode and brave_ai only (400 on gemini and copilot): the place the answer is for, e.g. "Austin, Texas, United States", so local prompts ("best pizza near me") answer for it. country defaults to its country. Use the "City, Region, Country" form: brave_ai answers a place it can't find with a 400 (free); AI Mode answers for our exit's area when Google doesn't know the name
     """
     uule: Annotated[str | None, Field(max_length=512)] = None
     """

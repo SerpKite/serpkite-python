@@ -438,7 +438,8 @@ class AssistantParams(TypedDict, total=False):
     location: Optional[str]
     """``ai_mode`` and ``brave_ai`` only (400 on gemini and copilot): the place the answer is for,
     e.g. ``"Austin, Texas, United States"``, so local prompts answer for it. ``country`` defaults
-    to its country; a place the assistant can't find is a 400 (free)."""
+    to its country. Use "City, Region, Country": ``brave_ai`` answers a place it can't find with a 400
+    (free); ``ai_mode`` needs a name Google knows."""
     uule: Optional[str]
     """``ai_mode`` and ``brave_ai`` only: Google's encoded location, used like ``location``."""
     track: Optional[Sequence[str]]
