@@ -237,6 +237,14 @@ class AssistantEcho(BaseModel):
     """
     Not on chatgpt
     """
+    location: str | None = None
+    """
+    ai_mode and brave_ai only
+    """
+    uule: str | None = None
+    """
+    ai_mode and brave_ai only
+    """
     web_search: bool | None = None
     """
     chatgpt only
@@ -259,6 +267,14 @@ class AssistantRequest(BaseModel):
     language: str | None = None
     """
     Interface language (e.g. en, de); the answer follows the prompt's language
+    """
+    location: Annotated[str | None, Field(max_length=256)] = None
+    """
+    ai_mode and brave_ai only (400 on gemini and copilot): the place the answer is for, e.g. "Austin, Texas, United States", so local prompts ("best pizza near me") answer for it. country defaults to its country. A place the assistant can't find is a 400 (free), never answered for another place
+    """
+    uule: Annotated[str | None, Field(max_length=512)] = None
+    """
+    ai_mode and brave_ai only: Google's encoded location, used like location
     """
     track: Annotated[list[TrackListItem] | None, Field(max_length=20)] = None
     """
@@ -1090,7 +1106,7 @@ class MonitorAnswer(BaseModel):
 
 class MonitorCreateRequest(BaseModel):
     """
-    Search and news monitors need `q`; webpage monitors need `url` and take only `country` besides; AI assistant monitors need `prompt` and take `country`, `language` (not chatgpt), `web_search` (chatgpt) and `track`
+    Search and news monitors need `q`; webpage monitors need `url` and take only `country` besides; AI assistant monitors need `prompt` and take `country`, `language` (not chatgpt), `location` (ai_mode, brave_ai), `web_search` (chatgpt) and `track`
     """
 
     model_config = ConfigDict(
@@ -1265,7 +1281,7 @@ class MonitorRunList(BaseModel):
 
 class MonitorSearch(BaseModel):
     """
-    The saved request a monitor reruns: a search (q and options), for webpage monitors url (and country), or for AI assistant monitors prompt (with country, language, web_search and track)
+    The saved request a monitor reruns: a search (q and options), for webpage monitors url (and country), or for AI assistant monitors prompt (with country, language, location on ai_mode and brave_ai, web_search and track)
     """
 
     model_config = ConfigDict(
@@ -1808,6 +1824,10 @@ class ResearchRequest(BaseModel):
     """
     country: str | None = None
     language: str | None = None
+    location: Annotated[str | None, Field(max_length=256)] = None
+    """
+    Place the searches are for, e.g. "Austin, Texas, United States" (as on /v1/search)
+    """
     include_domains: Annotated[list[str] | None, Field(max_length=20)] = None
     exclude_domains: Annotated[list[str] | None, Field(max_length=20)] = None
     webhook_url: AnyUrl | None = None

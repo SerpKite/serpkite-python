@@ -435,6 +435,12 @@ class AssistantParams(TypedDict, total=False):
     """Ask from this country (ISO 3166-1 alpha-2): answers, prices and shops follow it."""
     language: Optional[str]
     """Interface language (e.g. ``en``, ``de``); the answer follows the prompt's language."""
+    location: Optional[str]
+    """``ai_mode`` and ``brave_ai`` only (400 on gemini and copilot): the place the answer is for,
+    e.g. ``"Austin, Texas, United States"``, so local prompts answer for it. ``country`` defaults
+    to its country; a place the assistant can't find is a 400 (free)."""
+    uule: Optional[str]
+    """``ai_mode`` and ``brave_ai`` only: Google's encoded location, used like ``location``."""
     track: Optional[Sequence[str]]
     """Brands (``"Acme"``) and domains (``"acme.com"``, subdomains match), at most 20, checked
     against the answer; each comes back in ``mentions``."""

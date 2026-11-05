@@ -1133,8 +1133,8 @@ class SerpKite:
         **params: Unpack[AssistantParams],
     ) -> Union[AssistantResponse, str, dict[str, Any]]:
         """Google AI Mode (2 credits): the answer, cited sources and products. ``country`` is the
-        country Google answers for. 10-45 s. See :meth:`chatgpt` for the response, ``track``,
-        timeouts, retries and ``format``."""
+        country Google answers for, ``location`` the place. 10-45 s. See :meth:`chatgpt` for the
+        response, ``track``, timeouts, retries and ``format``."""
         return self._assistant("/v1/ai_mode", prompt, params, format, fields)
 
     @overload
@@ -1182,8 +1182,8 @@ class SerpKite:
         **params: Unpack[AssistantParams],
     ) -> Union[AssistantResponse, str, dict[str, Any]]:
         """Brave Search's AI answer (2 credits): cited sources, the searches it ran and products.
-        ``country`` sets Brave's market. About 10 s. See :meth:`chatgpt` for the response,
-        ``track``, timeouts, retries and ``format``."""
+        ``country`` sets Brave's market, ``location`` the place. About 10 s. See :meth:`chatgpt` for
+        the response, ``track``, timeouts, retries and ``format``."""
         return self._assistant("/v1/brave_ai", prompt, params, format, fields)
 
     def extract(
@@ -1346,6 +1346,7 @@ class SerpKite:
         include_domains: Optional[DomainList] = None,
         exclude_domains: Optional[DomainList] = None,
         webhook_url: Optional[str] = None,
+        location: Optional[str] = None,
     ) -> TaskCreated:
         """Start an async research task: planned Google searches, page reading and a cited
         Markdown report (``result.report``; with ``output_schema``, a JSON Schema dict or a
@@ -1357,7 +1358,15 @@ class SerpKite:
         :meth:`wait_research`, or receive the signed ``research.completed`` webhook. Only
         retried on 429, so a lost response never starts (and reserves) a second task."""
         body = research_body(
-            input, effort, output_schema, country, language, include_domains, exclude_domains, webhook_url
+            input,
+            effort,
+            output_schema,
+            country,
+            language,
+            include_domains,
+            exclude_domains,
+            webhook_url,
+            location,
         )
         return TaskCreated.model_validate(self._json("POST", "/v1/research", body, idempotent=False))
 
@@ -2586,10 +2595,19 @@ class AsyncSerpKite:
         include_domains: Optional[DomainList] = None,
         exclude_domains: Optional[DomainList] = None,
         webhook_url: Optional[str] = None,
+        location: Optional[str] = None,
     ) -> TaskCreated:
         """See :meth:`SerpKite.research`."""
         body = research_body(
-            input, effort, output_schema, country, language, include_domains, exclude_domains, webhook_url
+            input,
+            effort,
+            output_schema,
+            country,
+            language,
+            include_domains,
+            exclude_domains,
+            webhook_url,
+            location,
         )
         data = await self._json("POST", "/v1/research", body, idempotent=False)
         return TaskCreated.model_validate(data)

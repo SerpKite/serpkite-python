@@ -97,6 +97,7 @@ def research_body(
     include_domains: Optional[DomainList],
     exclude_domains: Optional[DomainList],
     webhook_url: Optional[str],
+    location: Optional[str] = None,
 ) -> dict[str, Any]:
     if not input:
         raise ValueError("research() needs an input")
@@ -107,6 +108,7 @@ def research_body(
             "output_schema": schema_dict(output_schema),
             "country": country,
             "language": language,
+            "location": location,
             "include_domains": domain_list(include_domains),
             "exclude_domains": domain_list(exclude_domains),
             "webhook_url": webhook_url,

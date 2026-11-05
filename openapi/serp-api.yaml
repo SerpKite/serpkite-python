@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SerpKite SERP API
-  version: 1.14.2
+  version: 1.15.0
   description: |
     Public search API (api.serpkite.com). Google results as clean JSON or Markdown
     for AI agents, plus a Google Custom Search–compatible endpoint. Official SDKs:
@@ -403,7 +403,8 @@ paths:
       operationId: aiMode
       description: |
         Google's AI Mode (`udm=50`) for `prompt`, logged out. `country` is the
-        country Google answers for. 10–45 s.
+        country Google answers for; `location` (or `uule`) the place, so
+        "near me" prompts answer for that city. 10–45 s.
       requestBody:
         required: true
         content:
@@ -417,7 +418,8 @@ paths:
       operationId: braveAi
       description: |
         Brave Search's AI answer ("Ask Brave") for `prompt`, logged out. `country`
-        sets Brave's market (prices and shops follow it). About 10 s. Brave doesn't
+        sets Brave's market (prices and shops follow it); `location` (or `uule`)
+        the place local answers are for. About 10 s. Brave doesn't
         answer every query: then `text` is empty, `meta.parse_quality` is `empty` and
         the request costs nothing.
       requestBody:
@@ -1490,6 +1492,8 @@ components:
         prompt: { type: string, minLength: 1, maxLength: 4000, description: The message to the assistant }
         country: { type: string, description: "Ask from this country (ISO 3166-1 alpha-2): answers, prices and shops follow it" }
         language: { type: string, description: "Interface language (e.g. en, de); the answer follows the prompt's language" }
+        location: { type: string, maxLength: 256, description: 'ai_mode and brave_ai only (400 on gemini and copilot): the place the answer is for, e.g. "Austin, Texas, United States", so local prompts ("best pizza near me") answer for it. country defaults to its country. A place the assistant can''t find is a 400 (free), never answered for another place' }
+        uule: { type: string, maxLength: 512, description: "ai_mode and brave_ai only: Google's encoded location, used like location" }
         track: { $ref: "#/components/schemas/TrackList" }
         include_html: { type: boolean, default: false, description: "Also return the answer page's HTML (`html`)" }
         format: { type: string, enum: [json, markdown, compact], default: json }
@@ -1559,6 +1563,8 @@ components:
         prompt: { type: string }
         country: { type: string }
         language: { type: string, description: Not on chatgpt }
+        location: { type: string, description: ai_mode and brave_ai only }
+        uule: { type: string, description: ai_mode and brave_ai only }
         web_search: { type: boolean, description: chatgpt only }
         include_html: { type: boolean }
     AssistantResponse:
@@ -1779,6 +1785,7 @@ components:
           description: A JSON Schema (at most 16 KB); the report is also returned as a JSON value in `result.output`
         country: { type: string }
         language: { type: string }
+        location: { type: string, maxLength: 256, description: 'Place the searches are for, e.g. "Austin, Texas, United States" (as on /v1/search)' }
         include_domains: { type: array, items: { type: string }, maxItems: 20 }
         exclude_domains: { type: array, items: { type: string }, maxItems: 20 }
         webhook_url: { type: string, format: uri, description: "Receives the signed `research.completed` event. Defaults to the account webhook" }
@@ -2779,7 +2786,7 @@ components:
 
     MonitorSearch:
       type: object
-      description: "The saved request a monitor reruns: a search (q and options), for webpage monitors url (and country), or for AI assistant monitors prompt (with country, language, web_search and track)"
+      description: "The saved request a monitor reruns: a search (q and options), for webpage monitors url (and country), or for AI assistant monitors prompt (with country, language, location on ai_mode and brave_ai, web_search and track)"
       properties:
         q: { type: string }
         url: { type: string }
@@ -2799,7 +2806,7 @@ components:
 
     MonitorCreateRequest:
       type: object
-      description: "Search and news monitors need `q`; webpage monitors need `url` and take only `country` besides; AI assistant monitors need `prompt` and take `country`, `language` (not chatgpt), `web_search` (chatgpt) and `track`"
+      description: "Search and news monitors need `q`; webpage monitors need `url` and take only `country` besides; AI assistant monitors need `prompt` and take `country`, `language` (not chatgpt), `location` (ai_mode, brave_ai), `web_search` (chatgpt) and `track`"
       properties:
         q: { type: string, minLength: 1, maxLength: 2048 }
         url: { type: string, format: uri, description: "endpoint=webpage: the page to watch for content changes" }
