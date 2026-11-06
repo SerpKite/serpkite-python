@@ -76,6 +76,9 @@ class Account(BaseModel):
     Negative after a refund of credits that were already spent; requests then get 402 insufficient_credits
     """
     rate_limit_rps: int
+    """
+    Requests per second allowed per key (on a free account, shared by all its keys)
+    """
     plan: str
     key: Key | None = None
     monthly_spend_cap: float | None = None

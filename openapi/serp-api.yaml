@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SerpKite SERP API
-  version: 1.16.0
+  version: 1.16.1
   description: |
     Public search API (api.serpkite.com). Google results as clean JSON or Markdown
     for AI agents, plus a Google Custom Search–compatible endpoint. Official SDKs:
@@ -36,7 +36,9 @@ info:
     Upstream failures (`upstream_error`, `upstream_blocked`, `upstream_timeout`)
     are `503` with `Retry-After`, never billed and safe to retry. The API never
     returns `502` or `504`. `429` also carries `Retry-After`: `rate_limited` is
-    the per-second limit; `daily_limit_reached` is reserved for a free daily
+    the per-second limit (per key; the keys of an account that never bought a
+    pack share one), or a full batch queue or crawl/research task limit
+    (`Retry-After: 30`); `daily_limit_reached` is reserved for a free daily
     limit on accounts that never bought a pack (none applies at the moment;
     it would reset at 00:00 UTC and name the billing page).
     `403 account_restricted` means the account's free use is paused because it
@@ -2821,7 +2823,7 @@ components:
       required: [balance, rate_limit_rps, plan, month]
       properties:
         balance: { type: number, description: "Negative after a refund of credits that were already spent; requests then get 402 insufficient_credits" }
-        rate_limit_rps: { type: integer }
+        rate_limit_rps: { type: integer, description: "Requests per second allowed per key (on a free account, shared by all its keys)" }
         plan: { type: string, enum: [free, paid] }
         key: { type: object, properties: { id: { type: string }, name: { type: string }, credit_limit: { type: [number, "null"] }, credits_used_month: { type: number } } }
         monthly_spend_cap: { type: [number, "null"] }
