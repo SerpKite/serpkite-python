@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SerpKite SERP API
-  version: 1.15.0
+  version: 1.15.1
   description: |
     Public search API (api.serpkite.com). Google results as clean JSON or Markdown
     for AI agents, plus a Google Custom Search–compatible endpoint. Official SDKs:
@@ -36,9 +36,9 @@ info:
     Upstream failures (`upstream_error`, `upstream_blocked`, `upstream_timeout`)
     are `503` with `Retry-After`, never billed and safe to retry. The API never
     returns `502` or `504`. `429` also carries `Retry-After`: `rate_limited` is
-    the per-second limit; `daily_limit_reached` is the free daily limit of an
-    account that never bought a pack, which resets at 00:00 UTC (the message
-    names the limit and the billing page; buying any pack removes it).
+    the per-second limit; `daily_limit_reached` is reserved for a free daily
+    limit on accounts that never bought a pack (none applies at the moment;
+    it would reset at 00:00 UTC and name the billing page).
     `403 account_restricted` means the account's free use is paused because it
     appears to be one of several accounts run by the same person (same device
     or network, or requests in step with other accounts) or uses a disposable
