@@ -382,6 +382,49 @@ class BatchCreateResponse(BaseModel):
     batches: list[Batch | Error]
 
 
+class CSEError(BaseModel):
+    """
+    Google's error body, used by /customsearch/v1 only
+    """
+
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    error: CSEErrorBody
+
+
+class CSEErrorBody(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    code: int
+    """
+    The HTTP status
+    """
+    message: str
+    errors: list[CSEErrorItem]
+    status: Annotated[
+        str, Field(examples=["INVALID_ARGUMENT", "UNAUTHENTICATED", "RESOURCE_EXHAUSTED", "UNAVAILABLE"])
+    ]
+    details: list[dict[str, Any]] | None = None
+    """
+    One google.rpc.ErrorInfo whose reason is the SerpKite error code
+    """
+    request_id: str | None = None
+
+
+class CSEErrorItem(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    message: str | None = None
+    domain: Literal["global"] | None = None
+    reason: Annotated[
+        str | None,
+        Field(examples=["badRequest", "keyInvalid", "quotaExceeded", "rateLimitExceeded", "backendError"]),
+    ] = None
+
+
 class CSEResponse(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -391,7 +434,10 @@ class CSEResponse(BaseModel):
     queries: dict[str, Any] | None = None
     context: dict[str, Any] | None = None
     searchInformation: SearchInformation
-    items: list[Item]
+    items: list[Item] | None = None
+    """
+    Absent when there are no results, as in the API
+    """
 
 
 class ChatGPTRequest(BaseModel):
@@ -831,6 +877,12 @@ class Item(BaseModel):
     htmlFormattedUrl: str | None = None
     pagemap: dict[str, Any] | None = None
     image: dict[str, Any] | None = None
+    mime: str | None = None
+    fileFormat: str | None = None
+    link_resolved: Literal[False] | None = None
+    """
+    Present when link is still Google's /goto redirect (as on /v1/search); displayLink is then the domain Google showed. POST /v1/resolve gives the destination
+    """
 
 
 class Key(BaseModel):

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SerpKite SERP API
-  version: 1.15.1
+  version: 1.16.0
   description: |
     Public search API (api.serpkite.com). Google results as clean JSON or Markdown
     for AI agents, plus a Google Custom Search–compatible endpoint. Official SDKs:
@@ -832,30 +832,56 @@ paths:
     get:
       summary: Google Custom Search JSON API–compatible endpoint (for apps moving off CSE)
       operationId: customSearch
+      description: |
+        Takes the Custom Search JSON API's parameters and answers in its `customsearch#search` shape,
+        always from Google. Result indexes follow Google's pages (result `i` is on page `(i-1)/10+1`);
+        a `start`/`num` window that spans two pages reads both and is billed for both. Query-shaping
+        parameters (`exactTerms`, `excludeTerms`, `orTerms`, `hq`, `fileType`, `lowRange`/`highRange`,
+        `siteSearch`) become operators in Google's query, as the API documents them. Accepted and
+        ignored: `cx`, `c2coff`, `googlehost`, `filter`, `linkSite` (Google retired `link:`), `alt`,
+        `fields`, `prettyPrint`, `quotaUser`, `callback`. Errors use Google's error body
+        (`CSEError`), not the `/v1` one.
+        `GET /customsearch/v1/siterestrict` (the API's Site Restricted variant) is served by the same
+        handler.
       parameters:
         - { name: key, in: query, schema: { type: string }, description: API key (or Authorization Bearer) }
         - { name: cx, in: query, schema: { type: string }, description: Accepted and ignored }
         - { name: q, in: query, required: true, schema: { type: string } }
-        - { name: start, in: query, schema: { type: integer, minimum: 1, maximum: 91, default: 1 } }
+        - { name: start, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 1 }, description: "First result (1-based); start + num - 1 must be at most 100" }
         - { name: num, in: query, schema: { type: integer, minimum: 1, maximum: 10, default: 10 } }
-        - { name: gl, in: query, schema: { type: string } }
-        - { name: hl, in: query, schema: { type: string } }
-        - { name: lr, in: query, schema: { type: string } }
-        - { name: safe, in: query, schema: { type: string, enum: [active, off] } }
+        - { name: gl, in: query, schema: { type: string }, description: Country the search is made from }
+        - { name: hl, in: query, schema: { type: string }, description: Interface language }
+        - { name: lr, in: query, schema: { type: string, examples: [lang_de, "lang_de|lang_fr"] }, description: Only documents in these languages (Google's lr) }
+        - { name: cr, in: query, schema: { type: string, examples: [countryDE] }, description: Only documents from these countries (Google's cr) }
+        - { name: safe, in: query, schema: { type: string, enum: [active, off, high, medium] }, description: "high and medium are the API's retired levels and mean active" }
         - { name: dateRestrict, in: query, schema: { type: string, examples: [d7, w2, m6, y1] } }
+        - { name: sort, in: query, schema: { type: string, examples: [date, "date:r:20240101:20241231"] }, description: "date (newest first) or date:r:YYYYMMDD:YYYYMMDD (a date range)" }
+        - { name: exactTerms, in: query, schema: { type: string }, description: Phrase every result contains }
+        - { name: excludeTerms, in: query, schema: { type: string }, description: Word or phrase no result contains }
+        - { name: orTerms, in: query, schema: { type: string }, description: Space-separated terms of which each result contains at least one }
+        - { name: hq, in: query, schema: { type: string }, description: Terms added to q }
+        - { name: fileType, in: query, schema: { type: string, examples: [pdf] } }
+        - { name: lowRange, in: query, schema: { type: string } }
+        - { name: highRange, in: query, schema: { type: string } }
         - { name: siteSearch, in: query, schema: { type: string } }
+        - { name: siteSearchFilter, in: query, schema: { type: string, enum: [e, i], default: i } }
         - { name: searchType, in: query, schema: { type: string, enum: [image] } }
+        - { name: imgSize, in: query, schema: { type: string, enum: [icon, small, medium, large, xlarge, xxlarge, huge] }, description: "Images; Google's sizes are icon, medium and large" }
+        - { name: imgType, in: query, schema: { type: string, enum: [clipart, face, lineart, stock, photo, animated] } }
+        - { name: imgColorType, in: query, schema: { type: string, enum: [color, gray, mono, trans] } }
+        - { name: imgDominantColor, in: query, schema: { type: string, enum: [black, blue, brown, gray, green, orange, pink, purple, red, teal, white, yellow] } }
+        - { name: rights, in: query, schema: { type: string }, description: "Images; any cc_* value asks for Creative Commons licences" }
       responses:
         "200":
           description: CSE-shaped response
           content:
             application/json:
               schema: { $ref: "#/components/schemas/CSEResponse" }
-        "400": { $ref: "#/components/responses/Error" }
-        "401": { $ref: "#/components/responses/Error" }
-        "402": { $ref: "#/components/responses/Error" }
-        "429": { $ref: "#/components/responses/Error" }
-        "503": { $ref: "#/components/responses/Unavailable" }
+        "400": { $ref: "#/components/responses/CSEError" }
+        "401": { $ref: "#/components/responses/CSEError" }
+        "402": { $ref: "#/components/responses/CSEError" }
+        "429": { $ref: "#/components/responses/CSEError" }
+        "503": { $ref: "#/components/responses/CSEError" }
 
   /v1/rank:
     post:
@@ -1199,6 +1225,15 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
+    CSEError:
+      description: |
+        Google's error body (`error.code` is the HTTP status, `errors[0].reason` Google's reason,
+        `details[0].reason` the SerpKite error code). Not billed. A 503 carries `Retry-After`.
+      headers:
+        Retry-After: { $ref: "#/components/headers/RetryAfter" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CSEError" }
     TaskAccepted:
       description: Queued. Poll `poll_url` or wait for the webhook
       headers:
@@ -2624,9 +2659,36 @@ components:
         image_links: { type: array, items: { type: string }, description: include_images=true only. Image URLs in document order }
         meta: { $ref: "#/components/schemas/Meta" }
 
+    CSEError:
+      type: object
+      description: Google's error body, used by /customsearch/v1 only
+      required: [error]
+      properties:
+        error: { $ref: "#/components/schemas/CSEErrorBody" }
+    CSEErrorBody:
+      type: object
+      required: [code, message, errors, status]
+      properties:
+        code: { type: integer, description: The HTTP status }
+        message: { type: string }
+        errors:
+          type: array
+          items: { $ref: "#/components/schemas/CSEErrorItem" }
+        status: { type: string, examples: [INVALID_ARGUMENT, UNAUTHENTICATED, RESOURCE_EXHAUSTED, UNAVAILABLE] }
+        details:
+          type: array
+          description: One google.rpc.ErrorInfo whose reason is the SerpKite error code
+          items: { type: object, additionalProperties: true }
+        request_id: { type: string }
+    CSEErrorItem:
+      type: object
+      properties:
+        message: { type: string }
+        domain: { type: string, const: global }
+        reason: { type: string, examples: [badRequest, keyInvalid, quotaExceeded, rateLimitExceeded, backendError] }
     CSEResponse:
       type: object
-      required: [kind, searchInformation, items]
+      required: [kind, searchInformation]
       properties:
         kind: { type: string, const: customsearch#search }
         url: { type: object }
@@ -2641,6 +2703,7 @@ components:
             formattedTotalResults: { type: string }
         items:
           type: array
+          description: Absent when there are no results, as in the API
           items:
             type: object
             properties:
@@ -2655,6 +2718,12 @@ components:
               htmlFormattedUrl: { type: string }
               pagemap: { type: object, additionalProperties: true }
               image: { type: object, additionalProperties: true }
+              mime: { type: string }
+              fileFormat: { type: string }
+              link_resolved:
+                type: boolean
+                const: false
+                description: Present when link is still Google's /goto redirect (as on /v1/search); displayLink is then the domain Google showed. POST /v1/resolve gives the destination
 
     RankRequest:
       type: object
