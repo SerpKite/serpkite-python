@@ -1047,7 +1047,7 @@ class Meta(BaseModel):
     """
     unresolved_links: Annotated[int | None, Field(ge=1)] = None
     """
-    How many results carry `link_resolved: false` (their `link` is still a Google /goto redirect). Absent when every link is a destination. SerpKite keeps following them after Google's delay: `POST /v1/resolve` returns their destinations, and the response is cached only once all of them resolve. Batch jobs and monitor runs wait for them (up to 2 minutes), so they rarely carry any.
+    How many results carry `link_resolved: false` (their `link` is still a Google /goto redirect). Absent when every link is a destination. Such a response is not cached. Batch jobs and monitor runs wait for these links (up to 2 minutes), so they rarely carry any; a live request returns at once, and its held-back links are not followed later.
     """
     latency_ms: int | None = None
     llm: LLMUsage | None = None

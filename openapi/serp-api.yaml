@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SerpKite SERP API
-  version: 1.16.1
+  version: 1.16.2
   description: |
     Public search API (api.serpkite.com). Google results as clean JSON or Markdown
     for AI agents, plus a Google Custom Search–compatible endpoint. Official SDKs:
@@ -919,11 +919,13 @@ paths:
       description: |
         Google sometimes holds back where a result leads for longer than a request lasts. Such a
         result comes back with `link_resolved: false` and Google's `https://www.google.com/goto?url=…`
-        redirect as its `link`. SerpKite goes on following that redirect for up to 2 minutes after
-        Google's delay (usually 5-30 s). Send the links here to get their destinations. A `pending`
-        link has `retry_after` seconds to wait. Only links SerpKite returned in the last 24 hours are
-        known; anything else is `unknown`. Batch jobs and monitor runs already wait for these links
-        themselves. Not billed; counts toward the rate limit.
+        redirect as its `link`. For batch jobs and monitor runs SerpKite goes on following that
+        redirect for up to 2 minutes after Google's delay (usually 5-30 s), and they wait for it
+        themselves; send such links here to get their destinations. A `pending` link has
+        `retry_after` seconds to wait. Links held back from a live request are not followed after
+        the response, so they come back `failed`; repeat the search, or run it as a batch job, to get
+        them. Only links SerpKite returned in the last 24 hours are known; anything else is
+        `unknown`. Not billed; counts toward the rate limit.
       requestBody:
         required: true
         content:
@@ -2145,10 +2147,9 @@ components:
           minimum: 1
           description: >-
             How many results carry `link_resolved: false` (their `link` is still a Google /goto
-            redirect). Absent when every link is a destination. SerpKite keeps following them after
-            Google's delay: `POST /v1/resolve` returns their destinations, and the response is cached
-            only once all of them resolve. Batch jobs and monitor runs wait for them (up to 2
-            minutes), so they rarely carry any.
+            redirect). Absent when every link is a destination. Such a response is not cached.
+            Batch jobs and monitor runs wait for these links (up to 2 minutes), so they rarely carry
+            any; a live request returns at once, and its held-back links are not followed later.
         latency_ms: { type: integer }
         llm: { $ref: "#/components/schemas/LLMUsage" }
         warnings:
