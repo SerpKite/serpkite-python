@@ -1047,7 +1047,7 @@ class Meta(BaseModel):
     """
     unresolved_links: Annotated[int | None, Field(ge=1)] = None
     """
-    How many results carry `link_resolved: false` (their `link` is still a Google /goto redirect). Absent when every link is a destination. Such a response is not cached. Batch jobs and monitor runs wait for these links (up to 2 minutes), so they rarely carry any; a live request returns at once, and its held-back links are not followed later.
+    How many results carry `link_resolved: false` (their `link` is still a Google /goto redirect). Absent when every link is a destination. Such a response is not cached. Batch jobs and monitor runs wait for these links (up to 2 minutes), so they rarely carry any; a live request returns at once and follows held-back links in the background. Use /v1/resolve to poll their destinations. Once all links resolve, the completed response can be cached.
     """
     latency_ms: int | None = None
     llm: LLMUsage | None = None
