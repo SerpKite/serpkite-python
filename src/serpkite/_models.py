@@ -649,6 +649,8 @@ class Error1(BaseModel):
             examples=[
                 "unauthorized",
                 "invalid_request",
+                "prompt_too_long",
+                "unsupported_country",
                 "insufficient_credits",
                 "rate_limited",
                 "daily_limit_reached",
@@ -667,7 +669,7 @@ class Error1(BaseModel):
         ),
     ]
     """
-    403: spend_cap_reached, key_limit_reached, account_restricted, forbidden. 409/422: idempotency_key_reused. 422: target_unavailable (the URL you asked for failed: its site answered 404, its domain doesn't resolve; resending won't help), no_pages. 429: rate_limited, daily_limit_reached. 503: upstream_error, upstream_blocked, upstream_timeout, unavailable (the API never sends 502 or 504)
+    400: invalid_request; prompt_too_long (a /v1/brave_ai prompt over 400 characters or 50 words); unsupported_country (country ru on /v1/chatgpt and /v1/gemini). 403: spend_cap_reached, key_limit_reached, account_restricted, forbidden. 409/422: idempotency_key_reused. 422: target_unavailable (the URL you asked for failed: its site answered 404, its domain doesn't resolve; resending won't help), no_pages. 429: rate_limited, daily_limit_reached. 503: upstream_error, upstream_blocked, upstream_timeout, unavailable (the API never sends 502 or 504)
     """
     message: str
     request_id: str | None = None

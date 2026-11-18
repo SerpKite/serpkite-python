@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SerpKite SERP API
-  version: 1.16.3
+  version: 1.17.0
   description: |
     Public search API (api.serpkite.com). Google results as clean JSON or Markdown
     for AI agents, plus a Google Custom Search–compatible endpoint. Official SDKs:
@@ -1403,8 +1403,8 @@ components:
           properties:
             code:
               type: string
-              description: "403: spend_cap_reached, key_limit_reached, account_restricted, forbidden. 409/422: idempotency_key_reused. 422: target_unavailable (the URL you asked for failed: its site answered 404, its domain doesn't resolve; resending won't help), no_pages. 429: rate_limited, daily_limit_reached. 503: upstream_error, upstream_blocked, upstream_timeout, unavailable (the API never sends 502 or 504)"
-              examples: [unauthorized, invalid_request, insufficient_credits, rate_limited, daily_limit_reached, spend_cap_reached, key_limit_reached, account_restricted, idempotency_key_reused, forbidden, not_found, upstream_error, upstream_blocked, upstream_timeout, unavailable, internal]
+              description: "400: invalid_request; prompt_too_long (a /v1/brave_ai prompt over 400 characters or 50 words); unsupported_country (country ru on /v1/chatgpt and /v1/gemini). 403: spend_cap_reached, key_limit_reached, account_restricted, forbidden. 409/422: idempotency_key_reused. 422: target_unavailable (the URL you asked for failed: its site answered 404, its domain doesn't resolve; resending won't help), no_pages. 429: rate_limited, daily_limit_reached. 503: upstream_error, upstream_blocked, upstream_timeout, unavailable (the API never sends 502 or 504)"
+              examples: [unauthorized, invalid_request, prompt_too_long, unsupported_country, insufficient_credits, rate_limited, daily_limit_reached, spend_cap_reached, key_limit_reached, account_restricted, idempotency_key_reused, forbidden, not_found, upstream_error, upstream_blocked, upstream_timeout, unavailable, internal]
             message: { type: string }
             request_id: { type: string }
 
