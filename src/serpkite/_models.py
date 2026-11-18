@@ -67,6 +67,21 @@ class AISource(BaseModel):
     """
 
 
+class AIStatus(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    status: str
+    window_minutes: int
+    degraded_below: float
+    """
+    Success rate under which a pair with min_requests or more is degraded
+    """
+    min_requests: int
+    updated_at: AwareDatetime
+    pairs: list[Pair]
+
+
 class Account(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -1543,6 +1558,36 @@ class PageMetadata(BaseModel):
     """
     Page count of a PDF
     """
+
+
+class Pair(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    endpoint: Annotated[str, Field(examples=["/v1/ai_mode"])]
+    country: str
+    """
+    The request's country (lowercase ISO code)
+    """
+    requests: int
+    success_rate: float
+    """
+    Share of requests answered 200 with an answer (0-1); 1 when there were none
+    """
+    failures: dict[str, int]
+    """
+    Failed requests by error code, plus `empty`
+    """
+    p50_ms: int
+    """
+    Upper bound of the latency bucket holding the median answered request
+    """
+    p95_ms: int
+    over_25s: float
+    """
+    Share of requests that took more than 25 s
+    """
+    degraded: bool
 
 
 class PatentResult(BaseModel):

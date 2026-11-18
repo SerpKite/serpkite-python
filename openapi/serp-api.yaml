@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SerpKite SERP API
-  version: 1.17.0
+  version: 1.18.0
   description: |
     Public search API (api.serpkite.com). Google results as clean JSON or Markdown
     for AI agents, plus a Google Custom Search–compatible endpoint. Official SDKs:
@@ -961,6 +961,29 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Status" }
+  /v1/status/ai:
+    get:
+      summary: AI answer health for the watched (endpoint, country) pairs over the last 30 minutes; 503 while one is degraded
+      operationId: statusAI
+      description: |
+        For uptime monitors. A pair is degraded when at least 4 requests in the
+        window succeeded less than 80% of the time, or when 2 or more got no
+        answer at all. A success is a 200 with an answer: empty answers and 5xx
+        count as failures, while 4xx errors are the caller's and are left out.
+        When customers are quiet, a canary asks each watched pair, so the
+        figure stays current. Both 200 and 503 return the same body.
+      security: []
+      responses:
+        "200":
+          description: Every watched pair is operational
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AIStatus" }
+        "503":
+          description: A watched pair is degraded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AIStatus" }
 
   /v1/batches:
     post:
@@ -2784,6 +2807,30 @@ components:
               success_rate: { type: number, description: Share of requests without a 5xx (0-1) }
               p50_ms: { type: integer, description: Median latency of successful (non-error) responses; 0 when none succeeded }
               p95_ms: { type: integer, description: 95th-percentile latency of successful (non-error) responses; 0 when none succeeded }
+    AIStatus:
+      type: object
+      required: [status, window_minutes, degraded_below, min_requests, pairs, updated_at]
+      properties:
+        status: { type: string, enum: [operational, degraded] }
+        window_minutes: { type: integer }
+        degraded_below: { type: number, description: Success rate under which a pair with min_requests or more is degraded }
+        min_requests: { type: integer }
+        updated_at: { type: string, format: date-time }
+        pairs:
+          type: array
+          items:
+            type: object
+            required: [endpoint, country, requests, success_rate, failures, p50_ms, p95_ms, over_25s, degraded]
+            properties:
+              endpoint: { type: string, examples: [/v1/ai_mode] }
+              country: { type: string, description: "The request's country (lowercase ISO code)" }
+              requests: { type: integer }
+              success_rate: { type: number, description: "Share of requests answered 200 with an answer (0-1); 1 when there were none" }
+              failures: { type: object, additionalProperties: { type: integer }, description: "Failed requests by error code, plus `empty`" }
+              p50_ms: { type: integer, description: "Upper bound of the latency bucket holding the median answered request" }
+              p95_ms: { type: integer }
+              over_25s: { type: number, description: Share of requests that took more than 25 s }
+              degraded: { type: boolean }
 
     BatchCreateRequest:
       type: object
