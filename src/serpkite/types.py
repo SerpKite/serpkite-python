@@ -450,6 +450,9 @@ class AssistantParams(TypedDict, total=False):
     max_age: Optional[int]
     """Accept a cached answer up to this many seconds old (half price; answers are cached for at
     most an hour)."""
+    timeout_ms: Optional[int]
+    """Give up after this many milliseconds (5000-90000, default 90000): the request then fails
+    with 503 ``upstream_timeout`` and costs nothing. Set it about a second under your own timeout."""
 
 
 class ChatGPTParams(TypedDict, total=False):
@@ -464,6 +467,8 @@ class ChatGPTParams(TypedDict, total=False):
     """Brands and domains to check the answer for; each comes back in ``mentions``."""
     include_html: Optional[bool]
     max_age: Optional[int]
+    timeout_ms: Optional[int]
+    """Give up after this many milliseconds (5000-90000); see :class:`AssistantParams`."""
 
 
 class MonitorSearchParams(TypedDict, total=False):

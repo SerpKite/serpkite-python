@@ -308,6 +308,10 @@ class AssistantRequest(BaseModel):
     """
     Accept a cached answer up to this many seconds old (half price); answers are cached for at most an hour
     """
+    timeout_ms: Annotated[int | None, Field(ge=5000, le=90000)] = None
+    """
+    Give up after this many milliseconds (default 90000): the request then fails with 503 `upstream_timeout` and costs nothing, so an answer that arrives after your client stopped waiting is not billed. Set it about a second under your client's timeout
+    """
 
 
 class AssistantResponse(BaseModel):
@@ -482,6 +486,10 @@ class ChatGPTRequest(BaseModel):
     format: str | None = "json"
     fields: str | None = None
     max_age: Annotated[int | None, Field(ge=0, le=2592000)] = None
+    timeout_ms: Annotated[int | None, Field(ge=5000, le=90000)] = None
+    """
+    Give up after this many milliseconds (default 90000): the request then fails with 503 `upstream_timeout` and costs nothing, so an answer that arrives after your client stopped waiting is not billed. Set it about a second under your client's timeout
+    """
 
 
 class Citation(BaseModel):

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SerpKite SERP API
-  version: 1.18.0
+  version: 1.19.0
   description: |
     Public search API (api.serpkite.com). Google results as clean JSON or Markdown
     for AI agents, plus a Google Custom Search–compatible endpoint. Official SDKs:
@@ -1566,6 +1566,7 @@ components:
         format: { type: string, enum: [json, markdown, compact], default: json }
         fields: { type: string }
         max_age: { type: integer, minimum: 0, maximum: 2592000, description: "Accept a cached answer up to this many seconds old (half price); answers are cached for at most an hour" }
+        timeout_ms: { type: integer, minimum: 5000, maximum: 90000, description: "Give up after this many milliseconds (default 90000): the request then fails with 503 `upstream_timeout` and costs nothing, so an answer that arrives after your client stopped waiting is not billed. Set it about a second under your client's timeout" }
     ChatGPTRequest:
       type: object
       required: [prompt]
@@ -1578,6 +1579,7 @@ components:
         format: { type: string, enum: [json, markdown, compact], default: json }
         fields: { type: string }
         max_age: { type: integer, minimum: 0, maximum: 2592000 }
+        timeout_ms: { type: integer, minimum: 5000, maximum: 90000, description: "Give up after this many milliseconds (default 90000): the request then fails with 503 `upstream_timeout` and costs nothing, so an answer that arrives after your client stopped waiting is not billed. Set it about a second under your client's timeout" }
     TrackList:
       type: array
       maxItems: 20
