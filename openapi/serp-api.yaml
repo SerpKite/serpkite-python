@@ -2825,7 +2825,7 @@ components:
             required: [endpoint, country, requests, success_rate, failures, p50_ms, p95_ms, over_25s, degraded]
             properties:
               endpoint: { type: string, examples: [/v1/ai_mode] }
-              country: { type: string, description: "The request's country (lowercase ISO code)" }
+              country: { type: string, description: "The country the requests named (lowercase ISO code), or none for requests that named no country" }
               requests: { type: integer }
               success_rate: { type: number, description: "Share of requests answered 200 with an answer (0-1); 1 when there were none" }
               failures: { type: object, additionalProperties: { type: integer }, description: "Failed requests by error code, plus `empty`" }

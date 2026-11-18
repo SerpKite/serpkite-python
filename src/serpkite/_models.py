@@ -1575,7 +1575,7 @@ class Pair(BaseModel):
     endpoint: Annotated[str, Field(examples=["/v1/ai_mode"])]
     country: str
     """
-    The request's country (lowercase ISO code)
+    The country the requests named (lowercase ISO code), or none for requests that named no country
     """
     requests: int
     success_rate: float
