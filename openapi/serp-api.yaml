@@ -43,8 +43,8 @@ info:
     it would reset at 00:00 UTC and name the billing page).
     `403 account_restricted` means the account's free use is paused because it
     appears to be one of several accounts run by the same person (same device
-    or network, or requests in step with other accounts) or uses a disposable
-    email address; buying any pack lifts it.
+    or network, requests in step with other accounts, or email domains set up
+    together) or uses a disposable email address; buying any pack lifts it.
 
     **CORS:** `Access-Control-Allow-Origin: *` without credentials; the `X-*`
     headers above are exposed, so a browser playground can call the API with a key.
